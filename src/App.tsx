@@ -1604,7 +1604,7 @@ ${rawText}`;
     }
   };
 
-  const postToInstagram = async (imageUrl: string, caption: string, account?: SocialAccount) => {
+  const postToInstagram = async (imageUrl: string, caption: string, account?: SocialAccount, scheduledAt?: string) => {
     const accessToken = (account?.accessToken || blogSettings.instagramAccessToken || '').trim();
     const businessId = (account?.pageId || blogSettings.instagramBusinessId || '').trim();
 
@@ -1616,18 +1616,23 @@ ${rawText}`;
       return { success: false, error: 'Instagramには公開URLの画像が必要です。WordPressへのアップロードが失敗した可能性があります。' };
     }
 
+    const isScheduled = !!scheduledAt && new Date(scheduledAt).getTime() > Date.now() + 60000;
+    const scheduledUnix = isScheduled ? Math.floor(new Date(scheduledAt!).getTime() / 1000) : null;
+
     try {
       // 1. Create Media Container
-      // Use access_token as query param to avoid "Cannot parse access token" errors in some environments
+      const containerBody: any = { image_url: imageUrl, caption: caption };
+      if (isScheduled && scheduledUnix) {
+        containerBody.published = false;
+        containerBody.scheduled_publish_time = scheduledUnix;
+      }
+
       const containerRes = await fetch(
         `https://graph.facebook.com/v19.0/${businessId}/media?access_token=${accessToken}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            image_url: imageUrl,
-            caption: caption
-          })
+          body: JSON.stringify(containerBody)
         }
       );
       
@@ -1648,11 +1653,12 @@ ${rawText}`;
         throw new Error('Media ID (creation_id) が取得できませんでした。Meta APIの応答を確認してください。');
       }
 
-      // 2. Publish Media
+      // 2. Publish Media (skip when scheduled — platform auto-publishes at scheduled_publish_time)
+      if (isScheduled) {
+        return { success: true, id: creationId, scheduled: true };
+      }
+
       // IMPORTANT: Instagram API needs time to process the image container before it can be published.
-      // If we publish immediately, we get "Media ID is not available (Type: OAuthException)".
-      // We should retry a few times.
-      
       let publishRes;
       let publishData;
       let publishText;
@@ -1662,7 +1668,6 @@ ${rawText}`;
       let finalError = '';
 
       while (retries < maxRetries) {
-        // Wait before trying to publish, increasing delay each retry
         await new Promise(resolve => setTimeout(resolve, delayMs + (retries * 1000)));
 
         publishRes = await fetch(
@@ -1670,12 +1675,10 @@ ${rawText}`;
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              creation_id: creationId
-            })
+            body: JSON.stringify({ creation_id: creationId })
           }
         );
-        
+
         publishText = await publishRes.text();
         try {
           publishData = JSON.parse(publishText);
@@ -1683,16 +1686,10 @@ ${rawText}`;
           throw new Error(`[Publish] Invalid JSON response: ${publishText.substring(0, 100)}`);
         }
 
-        if (!publishData.error) {
-          break; // Success!
-        }
-        
+        if (!publishData.error) break;
+
         finalError = `[Publish] ${publishData.error.message} (Type: ${publishData.error.type})`;
-        
-        // If it's the specific "Media ID is not available" error, it means the container isn't ready.
-        // It's safe to retry. For other errors, it might be fatal, but retrying a few times is
-        // standard practice for Graph API flakiness.
-        console.log(`Instagram publish attempt ${retries + 1} failed, container might not be ready. Error:`, publishData.error.message);
+        console.log(`Instagram publish attempt ${retries + 1} failed:`, publishData.error.message);
         retries++;
       }
 
@@ -1707,7 +1704,7 @@ ${rawText}`;
     }
   };
 
-  const postToThreads = async (imageUrl: string | undefined, caption: string, account: SocialAccount) => {
+  const postToThreads = async (imageUrl: string | undefined, caption: string, account: SocialAccount, scheduledAt?: string) => {
     const accessToken = (account.accessToken || '').trim();
     const userId = (account.pageId || '').trim(); // Threads uses pageId field for userId in this app
 
@@ -1719,15 +1716,23 @@ ${rawText}`;
       return { success: false, error: 'Threadsに画像付きで投稿するには公開URLが必要です。WordPressへのアップロードが失敗した可能性があります。' };
     }
 
+    const isScheduled = !!scheduledAt && new Date(scheduledAt).getTime() > Date.now() + 60000;
+    const scheduledUnix = isScheduled ? Math.floor(new Date(scheduledAt!).getTime() / 1000) : null;
+
     try {
       // 1. Create Threads Media Container
       const bodyPayload: any = { text: caption };
-      
+
       if (imageUrl) {
         bodyPayload.media_type = 'IMAGE';
         bodyPayload.image_url = imageUrl;
       } else {
         bodyPayload.media_type = 'TEXT';
+      }
+
+      if (isScheduled && scheduledUnix) {
+        bodyPayload.published = false;
+        bodyPayload.scheduled_publish_time = scheduledUnix;
       }
 
       const containerRes = await fetch(
@@ -1748,7 +1753,11 @@ ${rawText}`;
         throw new Error('Threads Creation ID が取得できませんでした。');
       }
 
-      // 2. Publish Threads Media
+      // 2. Publish Threads Media (skip when scheduled — platform auto-publishes)
+      if (isScheduled) {
+        return { success: true, id: creationId, scheduled: true };
+      }
+
       let publishRes;
       let publishData;
       let retries = 0;
@@ -1764,20 +1773,16 @@ ${rawText}`;
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              creation_id: creationId
-            })
+            body: JSON.stringify({ creation_id: creationId })
           }
         );
-        
+
         publishData = await publishRes.json();
-        
-        if (!publishData.error) {
-          break; // Success!
-        }
+
+        if (!publishData.error) break;
 
         finalError = `[Publish] ${publishData.error.message}`;
-        console.log(`Threads publish attempt ${retries + 1} failed. Error:`, publishData.error.message);
+        console.log(`Threads publish attempt ${retries + 1} failed:`, publishData.error.message);
         retries++;
       }
 
@@ -2179,55 +2184,42 @@ ${rawText}`;
       // Social Media Posting
       let instaResult: any = null;
       let threadsResult: any = null;
-      let skippedSocial = false;
+      const socialScheduledAt = !isImmediate ? post.scheduledAt : undefined;
 
       if (hasInstaDestination || hasThreadsDestination) {
-        if (!isImmediate) {
-          skippedSocial = true;
-          console.log("Skipping social media posting for scheduled post.");
-        } else {
-          if (hasInstaDestination && !uploadedImageUrl) {
-            throw new Error("Instagramへの投稿には画像が必須です。画像を設定してください。");
-          }
+        if (hasInstaDestination && !uploadedImageUrl && isImmediate) {
+          throw new Error("Instagramへの投稿には画像が必須です。画像を設定してください。");
+        }
 
-          const getCommonText = (id: string) => {
+        const getCommonText = (id: string) => {
           const content = blogSettings.commonContents.find(c => c.id === id);
           if (!content) return '';
-          // Strip HTML tags if it's code type, or just return as is for plain
           return '\n\n' + content.content.replace(/<[^>]*>/g, '').trim();
         };
 
         // Instagram
         if (hasInstaDestination && uploadedImageUrl) {
-          setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, postingMessage: 'Instagramに投稿中...' } : p));
-          
-          // Use generated instaCaption if available, otherwise fallback to title + metaDescription
-          // Do NOT automatically append hashtags anymore as per user request
+          setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, postingMessage: isImmediate ? 'Instagramに投稿中...' : 'Instagram予約設定中...' } : p));
           let instaCaption = post.instaCaption || `${post.title}\n\n${post.metaDescription}`;
           instaCaption += getCommonText(blogSettings.selectedInstaBottomContentId);
-          
-          // Try primary account first
-          instaResult = await postToInstagram(uploadedImageUrl, instaCaption);
-          
-          // Also try other Instagram accounts in socialAccounts
+
+          instaResult = await postToInstagram(uploadedImageUrl, instaCaption, undefined, socialScheduledAt);
+
           const otherInstaAccounts = blogSettings.socialAccounts.filter(a => a.platform === 'instagram');
           for (const acc of otherInstaAccounts) {
-            await postToInstagram(uploadedImageUrl, instaCaption, acc);
+            await postToInstagram(uploadedImageUrl, instaCaption, acc, socialScheduledAt);
           }
         }
 
-          // Threads
-          if (hasThreadsDestination) {
-            setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, postingMessage: 'Threadsに投稿中...' } : p));
-            
-            // Use generated threadsCaption if available, otherwise fallback to title + metaDescription
-            let threadsCaption = post.threadsCaption || `${post.title}\n\n${post.metaDescription}`;
-            threadsCaption += getCommonText(blogSettings.selectedThreadsBottomContentId);
-            
-            const threadsAccounts = blogSettings.socialAccounts.filter(a => a.platform === 'threads');
-            for (const acc of threadsAccounts) {
-              threadsResult = await postToThreads(uploadedImageUrl, threadsCaption, acc);
-            }
+        // Threads
+        if (hasThreadsDestination) {
+          setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, postingMessage: isImmediate ? 'Threadsに投稿中...' : 'Threads予約設定中...' } : p));
+          let threadsCaption = post.threadsCaption || `${post.title}\n\n${post.metaDescription}`;
+          threadsCaption += getCommonText(blogSettings.selectedThreadsBottomContentId);
+
+          const threadsAccounts = blogSettings.socialAccounts.filter(a => a.platform === 'threads');
+          for (const acc of threadsAccounts) {
+            threadsResult = await postToThreads(uploadedImageUrl, threadsCaption, acc, socialScheduledAt);
           }
         }
       }
@@ -2247,23 +2239,21 @@ ${rawText}`;
           msg = isImmediate ? 'WP公開完了' : `WP予約完了 (${wpResult.status})`;
         }
         
-        if (skippedSocial) {
-          msg = msg ? `${msg} (SNSは予約非対応のためスキップ)` : 'SNSは予約非対応のためスキップ';
-        } else {
-          if (hasInstaDestination) {
-            if (instaResult?.success) {
-              msg = msg ? `${msg} / Insta完了` : 'Insta完了';
-            } else if (instaResult) {
-              msg = msg ? `${msg} / Insta失敗: ${instaResult.error}` : `Insta失敗: ${instaResult.error}`;
-            }
+        if (hasInstaDestination) {
+          if (instaResult?.success) {
+            const label = instaResult.scheduled ? 'Insta予約完了' : 'Insta完了';
+            msg = msg ? `${msg} / ${label}` : label;
+          } else if (instaResult) {
+            msg = msg ? `${msg} / Insta失敗: ${instaResult.error}` : `Insta失敗: ${instaResult.error}`;
           }
+        }
 
-          if (hasThreadsDestination) {
-            if (threadsResult?.success) {
-              msg = msg ? `${msg} / Threads完了` : 'Threads完了';
-            } else if (threadsResult) {
-              msg = msg ? `${msg} / Threads失敗: ${threadsResult.error}` : `Threads失敗: ${threadsResult.error}`;
-            }
+        if (hasThreadsDestination) {
+          if (threadsResult?.success) {
+            const label = threadsResult.scheduled ? 'Threads予約完了' : 'Threads完了';
+            msg = msg ? `${msg} / ${label}` : label;
+          } else if (threadsResult) {
+            msg = msg ? `${msg} / Threads失敗: ${threadsResult.error}` : `Threads失敗: ${threadsResult.error}`;
           }
         }
 
@@ -2330,7 +2320,7 @@ ${rawText}`;
         }
       }
       setNotification({ 
-        message: `一括処理が完了しました。成功: ${successCount}件, 失敗: ${failCount}件${!isImmediate && (blogSettings.destinations.includes('instagram') || blogSettings.destinations.includes('threads')) ? '（※SNSは予約非対応のため送信スキップされました）' : ''}`, 
+        message: `一括処理が完了しました。成功: ${successCount}件, 失敗: ${failCount}件`,
         type: successCount > 0 ? 'success' : 'error' 
       });
     } finally {
@@ -2685,12 +2675,12 @@ ${rawText}`;
                             )}
                           </div>
                           
-                          <div 
+                          <div
                             onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
                             onDrop={(e) => { e.preventDefault(); e.stopPropagation(); handleFileUpload(e as any); }}
                             className="relative group"
                           >
-                            <label className="block cursor-pointer bg-white border border-black/10 border-dashed rounded-xl p-6 hover:bg-gold/5 hover:border-gold/30 transition-all text-center">
+                            <label className="block cursor-pointer bg-white border border-black/10 border-dashed rounded-xl p-4 hover:bg-gold/5 hover:border-gold/30 transition-all text-center">
                               <div className="flex flex-col items-center space-y-2">
                                 <Plus size={20} className="text-black/20 group-hover:text-gold transition-colors" />
                                 <span className="text-[10px] text-black/40 font-bold uppercase tracking-widest">
@@ -2700,15 +2690,35 @@ ${rawText}`;
                                   PDF, TXT, JPG, PNG (複数可)
                                 </span>
                               </div>
-                              <input 
-                                type="file" 
-                                accept=".pdf,.txt,image/*" 
+                              <input
+                                type="file"
+                                accept=".pdf,.txt,image/*"
                                 multiple
                                 onChange={handleFileUpload}
                                 className="hidden"
                               />
                             </label>
                           </div>
+
+                          {/* アップロード済みファイル一覧 */}
+                          {blogSettings.sourceFiles.length > 0 && (
+                            <div className="space-y-1 mt-2">
+                              {blogSettings.sourceFiles.map((file, idx) => (
+                                <div key={idx} className="flex items-center justify-between bg-gold/10 border border-gold/20 rounded-lg px-3 py-1.5">
+                                  <div className="flex items-center space-x-2 min-w-0">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-gold flex-shrink-0" />
+                                    <span className="text-[10px] text-black/70 truncate">{file.name}</span>
+                                  </div>
+                                  <button
+                                    onClick={() => setBlogSettings(prev => ({ ...prev, sourceFiles: prev.sourceFiles.filter((_, i) => i !== idx) }))}
+                                    className="text-black/30 hover:text-red-500 transition-colors flex-shrink-0 ml-2"
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
 
                         {/* 2. 特定の参考URL */}
