@@ -959,9 +959,10 @@ ${rawText}`;
       } else {
         // AI Generation (default)
         try {
-          const imagePrompt = blogSettings.customImagePrompt 
+          const articleTitle = blogData.title || keywordsString;
+          const imagePrompt = blogSettings.customImagePrompt
             ? `${blogSettings.customImagePrompt}. Keywords: ${keywordsString}. STRICT RULE: DO NOT include any text, letters, or characters in the image.`
-            : `${selectedImageStyle} Professional photography, 4k. STRICT RULE: DO NOT include any text, letters, or characters in the image. No text, no letters, no characters, no writing. Keywords: ${keywordsString}`;
+            : `${selectedImageStyle} This image is for a Japanese beauty salon blog article titled: "${articleTitle}". The image must visually represent the article topic. Professional photography, 4k. STRICT RULE: DO NOT include any text, letters, or characters in the image. No text, no letters, no characters, no writing. Keywords: ${keywordsString}`;
           
           const imageResponse = await callGeminiWithRetry(() => ai.models.generateContent({
             model: 'gemini-2.5-flash-image',
