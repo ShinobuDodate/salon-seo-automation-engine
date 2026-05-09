@@ -785,10 +785,13 @@ ${rawText}`;
       4. 最後に「詳細はプロフィールのリンクからブログをチェック！」というCTAを入れてください。
       5. 関連性の高いハッシュタグ（instaHashtags）を30個程度、スペース区切りで作成してください。
 
-      【執筆ルール - Threads】
-      1. 読者の興味を引く、短く簡潔で魅力的なスレッド用キャプション（threadsCaption）を作成してください。**ハッシュタグは絶対に含めないでください。**
-      2. 280文字以内で作成してください。
-      3. 絵文字を効果的に使用してください。
+      【執筆ルール - Threads（threadsCaption）】
+      ⚠️【最重要・絶対厳守】以下のルールを必ず守ること。違反した場合はやり直し。
+      1. **200文字以内**のプレーンテキストのみ。それ以上は絶対に生成しない。
+      2. **「#」記号を1文字も含めない**。ハッシュタグは完全禁止。
+      3. **instaCaption・instaHashtagsとは全く別の内容**にすること。コピー禁止。
+      4. 絵文字は最大3個まで。
+      5. 会話調の短い一言メッセージ形式で書く。
 
       【キーワードの優先順位と出現頻度】
       以下のキーワードを優先順位に従って使用してください。リストの上位にあるものほど、記事内での出現回数を多くし、より重要な文脈で使用してください。
@@ -993,7 +996,7 @@ ${rawText}`;
         metaDescription: blogData.metaDescription || '',
         instaCaption: blogData.instaCaption || '',
         instaHashtags: blogData.instaHashtags || '',
-        threadsCaption: blogData.threadsCaption || '',
+        threadsCaption: (blogData.threadsCaption || '').replace(/#\S*/g, '').replace(/\s{2,}/g, ' ').trim().substring(0, 280),
         imageUrl,
         imageBase64,
         jsonLd: blogData.jsonLd,
