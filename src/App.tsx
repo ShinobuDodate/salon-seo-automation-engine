@@ -401,10 +401,10 @@ function AppContent() {
       uploadedImages: [] as string[], // array of base64
       imageMode: 'ai' as 'ai' | 'upload' | 'edit',
       bannerText: "",
-      who: "",
       toWhom: "",
       what: "",
-      how: "",
+      tone: "専門的・信頼感重視",
+      how: "理解してもらう",
       detailedInstructions: "",
       modelSelection: 'pro' as 'pro' | 'flash',
       socialAccounts: [] as SocialAccount[],
@@ -457,17 +457,13 @@ function AppContent() {
 
   // Policy Presets
   const [policyPresets, setPolicyPresets] = useState<{
-    who: string[];
     toWhom: string[];
     what: string[];
-    how: string[];
     keywords: string[];
   }>(() => {
     const defaultPresets = {
-      who: ["美容サロンオーナー", "エステティシャン", "サロン経営コンサルタント"],
-      toWhom: ["30代の働く女性", "サロン経営に悩むオーナー", "美容に関心の高い層"],
-      what: ["最新の痩身技術", "サロン集客のノウハウ", "最新の美容トレンド"],
-      how: ["来店予約を促す", "LINE登録を促す", "信頼感を高める"],
+      toWhom: ["30代の働く女性", "エステサロンのオーナー", "美容に関心の高い層"],
+      what: ["最新の痩身技術", "サロン集客のノウハウ", "美容機器の導入メリット"],
       keywords: ["エステサロン 事務代行", "サロン集客", "美容経営", "痩身エステ", "フェイシャル"]
     };
     const saved = localStorage.getItem('blog_policy_presets');
@@ -493,10 +489,8 @@ function AppContent() {
     accessToken: ''
   });
   const [newPresetInputs, setNewPresetInputs] = useState({
-    who: '',
     toWhom: '',
     what: '',
-    how: '',
     keywords: ''
   });
 
@@ -728,10 +722,12 @@ ${rawText}`;
         }
       }));
 
-      const contentPrompt = `あなたは${blogSettings.who || '美容サロン専門の経営コンサルタント'}です。
-      ${blogSettings.toWhom ? `ターゲット読者: ${blogSettings.toWhom}` : ''}
-      ${blogSettings.what ? `伝える内容: ${blogSettings.what}` : ''}
-      ${blogSettings.how ? `目的・トーン: ${blogSettings.how}` : ''}
+      const contentPrompt = `あなたは美容サロン専門のSEOライターです。
+      【執筆方針】
+      - ターゲット読者: ${blogSettings.toWhom || '美容サロンに関心のある読者'}
+      - テーマ・訴求点: ${blogSettings.what || '美容・サロン関連の情報'}
+      - 文体・トーン: ${blogSettings.tone || '専門的・信頼感重視'}
+      - 記事の目的: ${blogSettings.how || '理解してもらう'}
       ${blogSettings.detailedInstructions ? `追加指示: ${blogSettings.detailedInstructions}` : ''}
       
       【今回の執筆スタイル（多様性の確保）】
@@ -960,9 +956,10 @@ ${rawText}`;
         // AI Generation (default)
         try {
           const articleTitle = blogData.title || keywordsString;
+          const articleSummary = blogData.metaDescription || '';
           const imagePrompt = blogSettings.customImagePrompt
             ? `${blogSettings.customImagePrompt}. Keywords: ${keywordsString}. STRICT RULE: DO NOT include any text, letters, or characters in the image.`
-            : `${selectedImageStyle} This image is for a Japanese beauty salon blog article titled: "${articleTitle}". The image must visually represent the article topic. Professional photography, 4k. STRICT RULE: DO NOT include any text, letters, or characters in the image. No text, no letters, no characters, no writing. Keywords: ${keywordsString}`;
+            : `${selectedImageStyle} This image is for a Japanese beauty salon blog article. Title: "${articleTitle}". Summary: "${articleSummary}". The image must visually represent the article content. Professional photography, 4k. STRICT RULE: DO NOT include any text, letters, or characters in the image. No text, no letters, no characters, no writing. Keywords: ${keywordsString}`;
           
           const imageResponse = await callGeminiWithRetry(() => ai.models.generateContent({
             model: 'gemini-2.5-flash-image',
@@ -1129,9 +1126,11 @@ ${rawText}`;
       const modelName = blogSettings.modelSelection === 'pro' ? 'gemini-3.1-pro-preview' : 'gemini-3-flash-preview';
       
       const activeKeywords = activeKeywordsArray.join(', ');
-      const variationPrompt = `あなたは${blogSettings.who || '美容サロン専門のSEOコンサルタント'}です。
-      ターゲット: ${blogSettings.toWhom || '美容サロン経営者や顧客'}
-      
+      const variationPrompt = `あなたは美容サロン専門のSEOライターです。
+      ターゲット読者: ${blogSettings.toWhom || '美容サロン経営者や顧客'}
+      テーマ・訴求点: ${blogSettings.what || '美容・サロン関連情報'}
+      記事の目的: ${blogSettings.how || '理解してもらう'}
+
       キーワード「${activeKeywords}」をベースに、読者の興味を惹き、集客や経営改善に繋がるブログ記事のタイトル案（または具体的な小テーマ）を${articleCount}個作成してください。
       ${blogSettings.detailedInstructions ? `追加指示: ${blogSettings.detailedInstructions}` : ''}
       
@@ -2590,16 +2589,15 @@ ${rawText}`;
                     </div>
                     
                     <div className="grid grid-cols-2 gap-3">
+                      {/* 誰に・何を：テキスト入力＋プリセットドロップダウン */}
                       {[
-                        { label: '誰が (執筆者)', key: 'who', placeholder: '例: サロンオーナー' },
-                        { label: '誰に (ターゲット)', key: 'toWhom', placeholder: '例: 30代の働く女性' },
-                        { label: '何を (テーマ)', key: 'what', placeholder: '例: 最新の痩身技術' },
-                        { label: 'どうしたい (目的)', key: 'how', placeholder: '例: 来店予約を促す' }
+                        { label: '誰に (ターゲット読者)', key: 'toWhom' as const, placeholder: '例: エステサロンのオーナー' },
+                        { label: '何を (テーマ・訴求点)', key: 'what' as const, placeholder: '例: スレンジュールの導入メリット' },
                       ].map((field) => (
                         <div key={field.key} className="space-y-1">
                           <label className="text-[10px] text-black/30 uppercase font-bold">{field.label}</label>
                           <div className="relative group">
-                            <input 
+                            <input
                               type="text"
                               value={(blogSettings as any)[field.key]}
                               onChange={(e) => setBlogSettings({...blogSettings, [field.key]: e.target.value})}
@@ -2612,7 +2610,7 @@ ${rawText}`;
                                   <ChevronDown size={14} />
                                 </button>
                                 <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-black/10 rounded-xl shadow-xl opacity-0 invisible group-hover/dropdown:opacity-100 group-hover/dropdown:visible transition-all z-50 py-1 max-h-40 overflow-y-auto">
-                                  {(policyPresets as any)[field.key].map((preset: string, idx: number) => (
+                                  {policyPresets[field.key].map((preset: string, idx: number) => (
                                     <button
                                       key={idx}
                                       onClick={() => setBlogSettings({...blogSettings, [field.key]: preset})}
@@ -2621,7 +2619,7 @@ ${rawText}`;
                                       {preset}
                                     </button>
                                   ))}
-                                  {(policyPresets as any)[field.key].length === 0 && (
+                                  {policyPresets[field.key].length === 0 && (
                                     <div className="px-3 py-2 text-[9px] text-black/30 italic">登録された項目がありません</div>
                                   )}
                                 </div>
@@ -2630,6 +2628,37 @@ ${rawText}`;
                           </div>
                         </div>
                       ))}
+
+                      {/* どんなトーンで：固定ドロップダウン */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-black/30 uppercase font-bold">どんなトーンで (文体)</label>
+                        <select
+                          value={blogSettings.tone}
+                          onChange={(e) => setBlogSettings({...blogSettings, tone: e.target.value})}
+                          className="w-full bg-black/5 border border-black/10 rounded-lg px-3 py-2 text-xs text-black/80 focus:outline-none focus:border-gold/50 appearance-none"
+                        >
+                          <option value="専門的・信頼感重視">専門的・信頼感重視</option>
+                          <option value="親しみやすく・カジュアル">親しみやすく・カジュアル</option>
+                          <option value="比較・データ重視">比較・データ重視</option>
+                          <option value="体験談・感情訴求">体験談・感情訴求</option>
+                        </select>
+                      </div>
+
+                      {/* どうしたい：固定ドロップダウン */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-black/30 uppercase font-bold">どうしたい (目的)</label>
+                        <select
+                          value={blogSettings.how}
+                          onChange={(e) => setBlogSettings({...blogSettings, how: e.target.value})}
+                          className="w-full bg-black/5 border border-black/10 rounded-lg px-3 py-2 text-xs text-black/80 focus:outline-none focus:border-gold/50 appearance-none"
+                        >
+                          <option value="理解してもらう">理解してもらう</option>
+                          <option value="購買意欲を高める">購買意欲を高める</option>
+                          <option value="問い合わせにつなげる">問い合わせにつなげる</option>
+                          <option value="来店予約を促す">来店予約を促す</option>
+                          <option value="SNS拡散を狙う">SNS拡散を狙う</option>
+                        </select>
+                      </div>
                     </div>
 
                     <div className="space-y-4 pt-4 border-t border-black/5">
@@ -4346,10 +4375,8 @@ ${rawText}`;
               <div className="flex-1 overflow-y-auto p-6 space-y-8">
                 {[
                   { label: 'SEOキーワード', key: 'keywords' as const },
-                  { label: '誰が (執筆者)', key: 'who' as const },
-                  { label: '誰に (ターゲット)', key: 'toWhom' as const },
-                  { label: '何を (テーマ)', key: 'what' as const },
-                  { label: 'どうしたい (目的)', key: 'how' as const }
+                  { label: '誰に (ターゲット読者)', key: 'toWhom' as const },
+                  { label: '何を (テーマ・訴求点)', key: 'what' as const },
                 ].map((section) => (
                   <div key={section.key} className="space-y-3">
                     <div className="flex items-center justify-between">
