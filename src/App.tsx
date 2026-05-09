@@ -1355,6 +1355,52 @@ ${rawText}`;
     };
   };
 
+  // 全WP APIリクエストに使う統一フォールバックヘルパー
+  // 試行順: サブディレクトリ標準 → ルート標準 → サブディレクトリplain → ルートplain
+  const wpFetchAuto = async (
+    endpointPath: string,
+    options: any = {}
+  ): Promise<{ response: any; apiBase: string }> => {
+    const base = blogSettings.targetUrl.trim().replace(/\/$/, '');
+
+    if (base.includes('rest_route=')) {
+      const [pathname, query] = endpointPath.split('?');
+      const cleanPath = pathname.startsWith('/') ? pathname.slice(1) : pathname;
+      const url = `${base}${cleanPath ? (base.includes('?') ? '&' : '?') + cleanPath : ''}${query ? '&' + query : ''}`;
+      const response = await wpProxyFetch(url, options);
+      return { response, apiBase: base };
+    }
+
+    const urlParts = base.split('/');
+    const rootDomain = `${urlParts[0]}//${urlParts[2]}`;
+    const hasSubdir = rootDomain !== base;
+
+    const buildPlainUrl = (domain: string, path: string) => {
+      const [pathname, query] = path.split('?');
+      return `${domain}/index.php?rest_route=/wp/v2${pathname}${query ? '&' + query : ''}`;
+    };
+
+    const candidates: { url: string; apiBase: string }[] = [
+      { url: `${base}/wp-json/wp/v2${endpointPath}`, apiBase: `${base}/wp-json/wp/v2` },
+      ...(hasSubdir ? [{ url: `${rootDomain}/wp-json/wp/v2${endpointPath}`, apiBase: `${rootDomain}/wp-json/wp/v2` }] : []),
+      { url: buildPlainUrl(base, endpointPath), apiBase: `${base}/index.php?rest_route=/wp/v2` },
+      ...(hasSubdir ? [{ url: buildPlainUrl(rootDomain, endpointPath), apiBase: `${rootDomain}/index.php?rest_route=/wp/v2` }] : []),
+    ];
+
+    let lastResponse: any = null;
+    let lastApiBase = candidates[0].apiBase;
+    for (const { url, apiBase } of candidates) {
+      console.log(`[WP] Trying: ${url}`);
+      const response = await wpProxyFetch(url, options);
+      if (response.ok) return { response, apiBase };
+      lastResponse = response;
+      lastApiBase = apiBase;
+      if (response.status !== 404) break;
+    }
+
+    return { response: lastResponse, apiBase: lastApiBase };
+  };
+
   const scanPostTypes = async () => {
     if (!blogSettings.targetUrl || !blogSettings.username || !blogSettings.appPassword) {
       setNotification({ message: "URL、ユーザー名、アプリパスワードを入力してください。", type: 'error' });
@@ -1519,37 +1565,11 @@ ${rawText}`;
 
     setIsFetchingCategories(true);
     try {
-      const baseUrl = blogSettings.targetUrl.trim();
       const credentials = btoa(`${blogSettings.username}:${blogSettings.appPassword}`);
-      let apiUrl = getWpApiUrl(baseUrl);
-      
-      let response = await wpProxyFetch(`${apiUrl}/categories?per_page=100`, {
+      const { response } = await wpFetchAuto('/categories?per_page=100', {
         method: 'GET',
         headers: { 'Authorization': `Basic ${credentials}` }
       });
-
-      if (!response.ok && response.status === 404) {
-        // Try the standard wp-json path first as a fallback
-        const standardApiUrl = `${baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl}/wp-json/wp/v2`;
-        let fallbackResponse = await wpProxyFetch(`${standardApiUrl}/categories?per_page=100`, {
-          method: 'GET',
-          headers: { 'Authorization': `Basic ${credentials}` }
-        });
-        
-        if (fallbackResponse.ok) {
-           response = fallbackResponse;
-        } else {
-           // If standard fails too, try the plain permalink structure
-           const plainApiUrl = `${baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl}/index.php?rest_route=/wp/v2`;
-           const plainResponse = await wpProxyFetch(`${plainApiUrl}/categories?per_page=100`, {
-             method: 'GET',
-             headers: { 'Authorization': `Basic ${credentials}` }
-           });
-           if (plainResponse.ok) {
-             response = plainResponse;
-           }
-        }
-      }
 
       if (response.ok) {
         try {
@@ -1563,15 +1583,15 @@ ${rawText}`;
           throw new Error(parseErr.message || "カテゴリーとしてHTMLページが返却されました。WordPressのURLが正しく設定されているか、またはREST APIが有効か確認してください。");
         }
       } else {
-         let errorText = "Unknown Error";
-         try { errorText = await response.text(); } catch(e) {}
-         const statusStr = response.status || "No Status";
-         const isHtml = errorText.trim().toLowerCase().startsWith('<!doctype html>') || errorText.trim().toLowerCase().startsWith('<html');
-         if (isHtml) {
-           throw new Error(`カテゴリーの取得に失敗しました。[Status ${statusStr}] WordPressのAPI URLが正しくないか、セキュリティプラグインによりブロックされています。URL設定を見直してください。`);
-         } else {
-           throw new Error(`カテゴリーの取得に失敗しました。[Status ${statusStr}] ${errorText.substring(0, 300)}`);
-         }
+        let errorText = "Unknown Error";
+        try { errorText = await response.text(); } catch(e) {}
+        const statusStr = response.status || "No Status";
+        const isHtml = errorText.trim().toLowerCase().startsWith('<!doctype html>') || errorText.trim().toLowerCase().startsWith('<html');
+        if (isHtml) {
+          throw new Error(`カテゴリーの取得に失敗しました。[Status ${statusStr}] WordPressのAPI URLが正しくないか、セキュリティプラグインによりブロックされています。URL設定を見直してください。`);
+        } else {
+          throw new Error(`カテゴリーの取得に失敗しました。[Status ${statusStr}] ${errorText.substring(0, 300)}`);
+        }
       }
     } catch (error: any) {
       console.error("Fetch categories error:", error);
@@ -1983,7 +2003,7 @@ ${rawText}`;
           // 1. Upload Image to Media Library
           if (post.imageBase64) {
             try {
-              let mediaResponse = await wpProxyFetch(`${apiUrl}/media`, {
+              const { response: mediaResponse, apiBase: mediaApiBase } = await wpFetchAuto('/media', {
                 method: 'POST',
                 headers: {
                   'Authorization': `Basic ${credentials}`,
@@ -1995,34 +2015,15 @@ ${rawText}`;
                 signal: controller.signal
               });
 
-              if (!mediaResponse.ok && mediaResponse.status === 404) {
-                const plainApiUrl = `${baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl}/index.php?rest_route=/wp/v2`;
-                const plainMediaResponse = await wpProxyFetch(`${plainApiUrl}/media`, {
-                  method: 'POST',
-                  headers: {
-                    'Authorization': `Basic ${credentials}`,
-                    'Content-Disposition': `attachment; filename="blog-image-${post.id}.png"`,
-                    'Content-Type': 'image/png'
-                  },
-                  body: post.imageBase64,
-                  isBase64: true,
-                  signal: controller.signal
-                });
-                if (plainMediaResponse.ok) {
-                  mediaResponse = plainMediaResponse;
-                  apiUrl = plainApiUrl;
-                }
-              }
-
               if (mediaResponse.ok) {
                 const mediaData = await mediaResponse.json();
                 featuredMediaId = mediaData.id;
                 if (mediaData.source_url) {
                   uploadedImageUrl = mediaData.source_url;
                 }
-                
-                const updateUrl = apiUrl.includes('?') ? `${apiUrl}/media/${featuredMediaId}` : `${apiUrl}/media/${featuredMediaId}`;
-                await wpProxyFetch(updateUrl, {
+                if (mediaApiBase) apiUrl = mediaApiBase;
+
+                await wpProxyFetch(`${apiUrl}/media/${featuredMediaId}`, {
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',
@@ -2117,8 +2118,7 @@ ${rawText}`;
             if (blogSettings.destinations.includes('news')) types.push(blogSettings.newsSlug);
 
             for (const type of types) {
-              let finalUrl = `${apiUrl}/${type}`;
-              let response = await wpProxyFetch(finalUrl, {
+              const { response: postResponse, apiBase: postApiBase } = await wpFetchAuto(`/${type}`, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
@@ -2128,56 +2128,13 @@ ${rawText}`;
                 signal: controller.signal
               });
 
-              // Fallback to plain route or root domain if 404
-              if (!response.ok && response.status === 404) {
-                // 1. Try plain route
-                if (!apiUrl.includes('rest_route=')) {
-                  const plainApiUrl = `${baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl}/index.php?rest_route=/wp/v2`;
-                  const plainUrl = `${plainApiUrl}/${type}`;
-                  console.log(`Post failed (404), trying plain route: ${plainUrl}`);
-                  const plainResponse = await wpProxyFetch(plainUrl, {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'Authorization': `Basic ${credentials}`
-                    },
-                    body: postBody,
-                    signal: controller.signal
-                  });
-                  if (plainResponse.ok) {
-                    response = plainResponse;
-                    apiUrl = plainApiUrl;
-                  }
-                }
+              let response = postResponse;
+              if (postApiBase) apiUrl = postApiBase;
 
-                // 2. If still 404 and baseUrl has a subdirectory, try root domain
-                if (!response.ok && baseUrl.includes('/', 8)) {
-                  const urlParts = baseUrl.split('/');
-                  const rootUrl = `${urlParts[0]}//${urlParts[2]}`;
-                  if (rootUrl !== baseUrl && rootUrl !== baseUrl.slice(0, -1)) {
-                    const rootApiUrl = `${rootUrl}/wp-json/wp/v2`;
-                    const rootFinalUrl = `${rootApiUrl}/${type}`;
-                    console.log(`Still 404, trying root domain: ${rootFinalUrl}`);
-                    const rootResponse = await wpProxyFetch(rootFinalUrl, {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Basic ${credentials}`
-                      },
-                      body: postBody,
-                      signal: controller.signal
-                    });
-                    if (rootResponse.ok) {
-                      response = rootResponse;
-                      apiUrl = rootApiUrl;
-                    }
-                  }
-                }
-              }
-
+              // metaフィールド非対応のWPの場合、metaなしで再試行
               if (!response.ok && response.status === 400) {
                 const { meta, ...bodyWithoutMeta } = postBody;
-                response = await wpProxyFetch(finalUrl, {
+                response = await wpProxyFetch(`${postApiBase || apiUrl}/${type}`, {
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',
