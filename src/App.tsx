@@ -22,7 +22,8 @@ import {
   Instagram,
   Eye,
   Save,
-  FileText
+  FileText,
+  Globe
 } from "lucide-react";
 
 // --- Types ---
@@ -3570,34 +3571,102 @@ ${rawText}`;
                         <label className="text-[10px] text-black/40 font-bold uppercase tracking-widest">
                           投稿先の選択
                         </label>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                          {[
-                            { id: 'blog', label: 'WordPress (投稿)', icon: <FileText size={12} /> },
-                            { id: 'news', label: 'WordPress (お知らせ)', icon: <FileText size={12} /> },
-                            { id: 'instagram', label: 'Instagram', icon: <Instagram size={12} /> },
-                            { id: 'threads', label: 'Threads', icon: <Share2 size={12} /> }
-                          ].map(dest => {
-                            const isSelected = blogSettings.destinations.includes(dest.id);
+
+                        {/* 3カラム: HP / Instagram / Threads */}
+                        <div className="grid grid-cols-3 gap-2">
+
+                          {/* HP カラム */}
+                          <div className="rounded-xl border border-black/10 overflow-hidden">
+                            <div className="flex items-center space-x-1.5 px-3 py-2 bg-black/5">
+                              <Globe size={12} className="text-black/40" />
+                              <span className="text-[10px] font-bold text-black/50 uppercase tracking-widest">HP</span>
+                            </div>
+                            <div className="px-3 py-2 space-y-2">
+                              {/* サイト名 */}
+                              <p className="text-[9px] font-bold text-black/40 truncate">do-date.com</p>
+                              {/* WP投稿 */}
+                              {[
+                                { id: 'blog', label: 'WP 投稿' },
+                                { id: 'news', label: 'WP お知らせ' },
+                              ].map(dest => {
+                                const isSelected = blogSettings.destinations.includes(dest.id);
+                                return (
+                                  <button
+                                    key={dest.id}
+                                    onClick={() => {
+                                      const newDest = isSelected
+                                        ? blogSettings.destinations.filter(d => d !== dest.id)
+                                        : [...blogSettings.destinations, dest.id];
+                                      setBlogSettings({ ...blogSettings, destinations: newDest });
+                                    }}
+                                    className={`w-full flex items-center space-x-2 px-2 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${
+                                      isSelected
+                                        ? 'bg-gold/10 border-gold/40 text-gold'
+                                        : 'bg-white border-black/10 text-black/40 hover:bg-black/5'
+                                    }`}
+                                  >
+                                    <div className={`w-3 h-3 rounded flex items-center justify-center flex-shrink-0 border ${isSelected ? 'bg-gold border-gold' : 'border-black/20 bg-white'}`}>
+                                      {isSelected && <span className="text-white text-[7px] font-black">✓</span>}
+                                    </div>
+                                    <span>{dest.label}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Instagram カラム */}
+                          {(() => {
+                            const isSelected = blogSettings.destinations.includes('instagram');
                             return (
                               <button
-                                key={dest.id}
                                 onClick={() => {
-                                  const newDestinations = isSelected 
-                                    ? blogSettings.destinations.filter(d => d !== dest.id)
-                                    : [...blogSettings.destinations, dest.id];
-                                  setBlogSettings({ ...blogSettings, destinations: newDestinations });
+                                  const newDest = isSelected
+                                    ? blogSettings.destinations.filter(d => d !== 'instagram')
+                                    : [...blogSettings.destinations, 'instagram'];
+                                  setBlogSettings({ ...blogSettings, destinations: newDest });
                                 }}
-                                className={`flex items-center justify-center space-x-1.5 p-2 rounded-xl text-xs font-bold border transition-all ${
-                                  isSelected 
-                                    ? 'bg-gold/10 border-gold/50 text-gold shadow-sm' 
-                                    : 'bg-black/5 border-transparent text-black/40 hover:bg-black/10'
+                                className={`rounded-xl border flex flex-col items-center justify-center py-4 space-y-2 transition-all ${
+                                  isSelected
+                                    ? 'bg-gold/10 border-gold/40 text-gold'
+                                    : 'bg-black/5 border-black/10 text-black/40 hover:bg-black/10'
                                 }`}
                               >
-                                {dest.icon}
-                                <span>{dest.label}</span>
+                                <Instagram size={18} />
+                                <span className="text-[10px] font-bold uppercase tracking-widest">Instagram</span>
+                                <div className={`w-4 h-4 rounded flex items-center justify-center border ${isSelected ? 'bg-gold border-gold' : 'border-black/20 bg-white'}`}>
+                                  {isSelected && <span className="text-white text-[8px] font-black">✓</span>}
+                                </div>
                               </button>
                             );
-                          })}
+                          })()}
+
+                          {/* Threads カラム */}
+                          {(() => {
+                            const isSelected = blogSettings.destinations.includes('threads');
+                            return (
+                              <button
+                                onClick={() => {
+                                  const newDest = isSelected
+                                    ? blogSettings.destinations.filter(d => d !== 'threads')
+                                    : [...blogSettings.destinations, 'threads'];
+                                  setBlogSettings({ ...blogSettings, destinations: newDest });
+                                }}
+                                className={`rounded-xl border flex flex-col items-center justify-center py-4 space-y-2 transition-all ${
+                                  isSelected
+                                    ? 'bg-gold/10 border-gold/40 text-gold'
+                                    : 'bg-black/5 border-black/10 text-black/40 hover:bg-black/10'
+                                }`}
+                              >
+                                <Share2 size={18} />
+                                <span className="text-[10px] font-bold uppercase tracking-widest">Threads</span>
+                                <div className={`w-4 h-4 rounded flex items-center justify-center border ${isSelected ? 'bg-gold border-gold' : 'border-black/20 bg-white'}`}>
+                                  {isSelected && <span className="text-white text-[8px] font-black">✓</span>}
+                                </div>
+                              </button>
+                            );
+                          })()}
+
                         </div>
                       </div>
 
