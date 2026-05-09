@@ -820,7 +820,7 @@ ${rawText}`;
               threadsCaption: { type: Type.STRING },
               jsonLd: { type: Type.STRING }
             },
-            required: ["title", "content", "plainContent", "metaDescription", "instaCaption", "instaHashtags"]
+            required: ["title", "content", "plainContent", "metaDescription", "instaCaption", "instaHashtags", "threadsCaption"]
           },
           maxOutputTokens: 8192,
           thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
