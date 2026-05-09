@@ -84,6 +84,15 @@ interface CommonContent {
   content: string;
 }
 
+interface WpSite {
+  id: string;
+  name: string;
+  url: string;
+  username: string;
+  appPassword: string;
+  newsSlug: string;
+}
+
 // --- Styles ---
 const COMMON_FOOTER = `<div style="margin-top: 50px; padding: 30px; background: #f9f9f9; border-radius: 15px; border: 1px solid #eee; text-align: center; font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;">
 <h3 style="color: #333; margin-bottom: 15px; font-size: 18px; font-weight: bold; line-height: 1.4;">商品の導入、詳細はお気軽にお問い合わせください</h3>
@@ -387,6 +396,15 @@ function AppContent() {
       targetUrl: "https://do-date.com/web/",
       username: "",
       appPassword: "",
+      wpSites: [{
+        id: 'default',
+        name: 'do-date.com',
+        url: 'https://do-date.com/web/',
+        username: '',
+        appPassword: '',
+        newsSlug: 'news'
+      }] as WpSite[],
+      selectedWpSiteId: 'default',
       categoryId: "",
       articleCount: 10,
       destinations: ['blog'] as string[],
@@ -440,8 +458,30 @@ function AppContent() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Merge with defaults to ensure new fields exist
-        return { ...defaultSettings, ...parsed };
+        const merged = { ...defaultSettings, ...parsed };
+        // 既存設定からwpSitesへ自動移行
+        if ((!merged.wpSites || merged.wpSites.length === 0) && merged.targetUrl) {
+          merged.wpSites = [{
+            id: 'default',
+            name: merged.targetUrl.replace(/https?:\/\//, '').replace(/\/.*$/, ''),
+            url: merged.targetUrl,
+            username: merged.username || '',
+            appPassword: merged.appPassword || '',
+            newsSlug: merged.newsSlug || 'news'
+          }];
+          merged.selectedWpSiteId = 'default';
+        } else if (merged.wpSites && merged.wpSites.length > 0 && !merged.selectedWpSiteId) {
+          merged.selectedWpSiteId = merged.wpSites[0].id;
+        }
+        // 選択中サイトの情報をミラーフィールドに同期
+        const activeSite = merged.wpSites?.find((s: WpSite) => s.id === merged.selectedWpSiteId);
+        if (activeSite) {
+          merged.targetUrl = activeSite.url;
+          merged.username = activeSite.username;
+          merged.appPassword = activeSite.appPassword;
+          merged.newsSlug = activeSite.newsSlug || 'news';
+        }
+        return merged;
       } catch (e) {
         return defaultSettings;
       }
@@ -493,6 +533,13 @@ function AppContent() {
     toWhom: '',
     what: '',
     keywords: ''
+  });
+  const [expandedWpSiteId, setExpandedWpSiteId] = useState<string>(
+    () => blogSettings.selectedWpSiteId || 'default'
+  );
+  const [showAddWpSiteForm, setShowAddWpSiteForm] = useState(false);
+  const [newWpSite, setNewWpSite] = useState<Omit<WpSite, 'id'>>({
+    name: '', url: '', username: '', appPassword: '', newsSlug: 'news'
   });
 
   // Save presets to localStorage
@@ -3581,38 +3628,83 @@ ${rawText}`;
                               <Globe size={12} className="text-black/40" />
                               <span className="text-[10px] font-bold text-black/50 uppercase tracking-widest">HP</span>
                             </div>
-                            <div className="px-3 py-2 space-y-2">
-                              {/* サイト名 */}
-                              <p className="text-[9px] font-bold text-black/40 truncate">do-date.com</p>
-                              {/* WP投稿 */}
-                              {[
-                                { id: 'blog', label: 'WP 投稿' },
-                                { id: 'news', label: 'WP お知らせ' },
-                              ].map(dest => {
-                                const isSelected = blogSettings.destinations.includes(dest.id);
+
+                            {/* サイト一覧（アコーディオン） */}
+                            <div className="divide-y divide-black/5">
+                              {blogSettings.wpSites.map(site => {
+                                const isExpanded = expandedWpSiteId === site.id;
+                                const isActive = blogSettings.selectedWpSiteId === site.id;
                                 return (
-                                  <button
-                                    key={dest.id}
-                                    onClick={() => {
-                                      const newDest = isSelected
-                                        ? blogSettings.destinations.filter(d => d !== dest.id)
-                                        : [...blogSettings.destinations, dest.id];
-                                      setBlogSettings({ ...blogSettings, destinations: newDest });
-                                    }}
-                                    className={`w-full flex items-center space-x-2 px-2 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${
-                                      isSelected
-                                        ? 'bg-gold/10 border-gold/40 text-gold'
-                                        : 'bg-white border-black/10 text-black/40 hover:bg-black/5'
-                                    }`}
-                                  >
-                                    <div className={`w-3 h-3 rounded flex items-center justify-center flex-shrink-0 border ${isSelected ? 'bg-gold border-gold' : 'border-black/20 bg-white'}`}>
-                                      {isSelected && <span className="text-white text-[7px] font-black">✓</span>}
-                                    </div>
-                                    <span>{dest.label}</span>
-                                  </button>
+                                  <div key={site.id}>
+                                    {/* サイト名ヘッダー */}
+                                    <button
+                                      onClick={() => {
+                                        const next = isExpanded ? '' : site.id;
+                                        setExpandedWpSiteId(next);
+                                        if (!isExpanded) {
+                                          setBlogSettings({
+                                            ...blogSettings,
+                                            selectedWpSiteId: site.id,
+                                            targetUrl: site.url,
+                                            username: site.username,
+                                            appPassword: site.appPassword,
+                                            newsSlug: site.newsSlug || 'news'
+                                          });
+                                        }
+                                      }}
+                                      className={`w-full flex items-center justify-between px-3 py-2 text-[10px] font-bold transition-all ${
+                                        isActive ? 'text-gold' : 'text-black/50 hover:text-black/70'
+                                      }`}
+                                    >
+                                      <span className="truncate">{site.name}</span>
+                                      <ChevronDown size={10} className={`flex-shrink-0 ml-1 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                                    </button>
+
+                                    {/* 展開時：投稿種別チェック */}
+                                    {isExpanded && (
+                                      <div className="px-3 pb-3 space-y-1.5 bg-gold/3">
+                                        {[
+                                          { id: 'blog', label: 'WP 投稿' },
+                                          { id: 'news', label: 'WP お知らせ' },
+                                        ].map(dest => {
+                                          const isSelected = blogSettings.destinations.includes(dest.id);
+                                          return (
+                                            <button
+                                              key={dest.id}
+                                              onClick={() => {
+                                                const newDest = isSelected
+                                                  ? blogSettings.destinations.filter(d => d !== dest.id)
+                                                  : [...blogSettings.destinations, dest.id];
+                                                setBlogSettings({ ...blogSettings, destinations: newDest });
+                                              }}
+                                              className={`w-full flex items-center space-x-2 px-2 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${
+                                                isSelected
+                                                  ? 'bg-gold/10 border-gold/40 text-gold'
+                                                  : 'bg-white border-black/10 text-black/40 hover:bg-black/5'
+                                              }`}
+                                            >
+                                              <div className={`w-3 h-3 rounded flex items-center justify-center flex-shrink-0 border ${isSelected ? 'bg-gold border-gold' : 'border-black/20 bg-white'}`}>
+                                                {isSelected && <span className="text-white text-[7px] font-black">✓</span>}
+                                              </div>
+                                              <span>{dest.label}</span>
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
                                 );
                               })}
                             </div>
+
+                            {/* サイトを追加ボタン */}
+                            <button
+                              onClick={() => setShowAddWpSiteForm(true)}
+                              className="w-full flex items-center justify-center space-x-1 py-2 text-[9px] text-black/30 hover:text-gold transition-colors border-t border-black/5"
+                            >
+                              <Plus size={9} />
+                              <span>サイトを追加</span>
+                            </button>
                           </div>
 
                           {/* Instagram カラム */}
@@ -3670,26 +3762,51 @@ ${rawText}`;
                         </div>
                       </div>
 
-                      <h4 className="text-[10px] font-bold uppercase tracking-widest text-black/40 pt-4 border-t border-black/5">WordPress 接続設定</h4>
+                      <h4 className="text-[10px] font-bold uppercase tracking-widest text-black/40 pt-4 border-t border-black/5">
+                        WordPress 接続設定
+                        {blogSettings.wpSites.find(s => s.id === blogSettings.selectedWpSiteId) && (
+                          <span className="ml-2 normal-case text-gold font-normal">
+                            — {blogSettings.wpSites.find(s => s.id === blogSettings.selectedWpSiteId)?.name}
+                          </span>
+                        )}
+                      </h4>
                       <div className="space-y-1">
                         <label className="text-[10px] text-black/30 uppercase font-bold">WordPress サイトURL</label>
-                          <p className="text-[9px] text-black/40 mb-1">Do-DateのサイトURLを入力してください（例: https://do-date.com/web/）</p>
-                          <input 
+                          <p className="text-[9px] text-black/40 mb-1">WordPressのサイトURLを入力してください（例: https://do-date.com/web/）</p>
+                          <input
                             type="text"
                             value={blogSettings.targetUrl}
-                            onChange={(e) => setBlogSettings({...blogSettings, targetUrl: e.target.value})}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setBlogSettings({
+                                ...blogSettings,
+                                targetUrl: val,
+                                wpSites: blogSettings.wpSites.map(s =>
+                                  s.id === blogSettings.selectedWpSiteId ? { ...s, url: val } : s
+                                )
+                              });
+                            }}
                             className="w-full bg-black/5 border border-black/10 rounded-lg px-3 py-2 text-xs text-black/60 focus:outline-none"
-                            placeholder="https://do-date.com/web/"
+                            placeholder="https://example.com/"
                           />
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-1">
                             <label className="text-[10px] text-black/30 uppercase font-bold">ユーザー名</label>
                             <p className="text-[9px] text-black/40 mb-1">WPログイン時のユーザー名</p>
-                            <input 
+                            <input
                               type="text"
                               value={blogSettings.username}
-                              onChange={(e) => setBlogSettings({...blogSettings, username: e.target.value})}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setBlogSettings({
+                                  ...blogSettings,
+                                  username: val,
+                                  wpSites: blogSettings.wpSites.map(s =>
+                                    s.id === blogSettings.selectedWpSiteId ? { ...s, username: val } : s
+                                  )
+                                });
+                              }}
                               className="w-full bg-black/5 border border-black/10 rounded-lg px-3 py-2 text-xs text-black/60 focus:outline-none"
                               placeholder="admin"
                             />
@@ -3697,10 +3814,19 @@ ${rawText}`;
                           <div className="space-y-1">
                             <label className="text-[10px] text-black/30 uppercase font-bold">アプリパスワード</label>
                             <p className="text-[9px] text-black/40 mb-1">WP管理画面で発行したパスワード</p>
-                            <input 
+                            <input
                               type="password"
                               value={blogSettings.appPassword}
-                              onChange={(e) => setBlogSettings({...blogSettings, appPassword: e.target.value})}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setBlogSettings({
+                                  ...blogSettings,
+                                  appPassword: val,
+                                  wpSites: blogSettings.wpSites.map(s =>
+                                    s.id === blogSettings.selectedWpSiteId ? { ...s, appPassword: val } : s
+                                  )
+                                });
+                              }}
                               className="w-full bg-black/5 border border-black/10 rounded-lg px-3 py-2 text-xs text-black/60 focus:outline-none"
                               placeholder="xxxx xxxx xxxx xxxx"
                             />
@@ -4428,6 +4554,80 @@ ${rawText}`;
             </motion.div>
           )}
         </AnimatePresence>
+
+      {/* WPサイト追加モーダル */}
+      <AnimatePresence>
+        {showAddWpSiteForm && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
+            >
+              <div className="p-6 border-b border-black/5 flex items-center justify-between bg-gold/5">
+                <div className="flex items-center space-x-3">
+                  <Globe className="text-gold" size={18} />
+                  <h3 className="text-sm font-bold">WPサイトを追加</h3>
+                </div>
+                <button onClick={() => { setShowAddWpSiteForm(false); setNewWpSite({ name: '', url: '', username: '', appPassword: '', newsSlug: 'news' }); }}>
+                  <X size={18} className="text-black/40" />
+                </button>
+              </div>
+              <div className="p-6 space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-black/40 font-bold uppercase">サイト名（表示名）</label>
+                  <input type="text" placeholder="例: クライアントA" value={newWpSite.name}
+                    onChange={(e) => setNewWpSite({ ...newWpSite, name: e.target.value })}
+                    className="w-full bg-black/5 border border-black/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-gold/50" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-black/40 font-bold uppercase">WordPress サイトURL</label>
+                  <input type="text" placeholder="https://example.com/" value={newWpSite.url}
+                    onChange={(e) => setNewWpSite({ ...newWpSite, url: e.target.value })}
+                    className="w-full bg-black/5 border border-black/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-gold/50" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-black/40 font-bold uppercase">ユーザー名</label>
+                    <input type="text" placeholder="admin" value={newWpSite.username}
+                      onChange={(e) => setNewWpSite({ ...newWpSite, username: e.target.value })}
+                      className="w-full bg-black/5 border border-black/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-gold/50" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-black/40 font-bold uppercase">アプリパスワード</label>
+                    <input type="password" placeholder="xxxx xxxx xxxx" value={newWpSite.appPassword}
+                      onChange={(e) => setNewWpSite({ ...newWpSite, appPassword: e.target.value })}
+                      className="w-full bg-black/5 border border-black/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-gold/50" />
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    if (!newWpSite.name || !newWpSite.url) return;
+                    const id = `wp-${Date.now()}`;
+                    const site: WpSite = { id, ...newWpSite };
+                    setBlogSettings({
+                      ...blogSettings,
+                      wpSites: [...blogSettings.wpSites, site],
+                      selectedWpSiteId: id,
+                      targetUrl: site.url,
+                      username: site.username,
+                      appPassword: site.appPassword,
+                      newsSlug: site.newsSlug || 'news'
+                    });
+                    setExpandedWpSiteId(id);
+                    setShowAddWpSiteForm(false);
+                    setNewWpSite({ name: '', url: '', username: '', appPassword: '', newsSlug: 'news' });
+                  }}
+                  className="w-full bg-gold text-black font-bold py-2.5 rounded-xl text-xs hover:bg-gold/80 transition-all"
+                >
+                  追加する
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showPresetManager && (
