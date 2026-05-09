@@ -93,6 +93,16 @@ interface WpSite {
   newsSlug: string;
 }
 
+interface SalonProfile {
+  id: string;
+  name: string;
+  hpUrl: string;
+  hotpepperUrl: string;
+  instagramUrl: string;
+  otherUrls: string[];
+  notes: string;
+}
+
 // --- Styles ---
 const COMMON_FOOTER = `<div style="margin-top: 50px; padding: 30px; background: #f9f9f9; border-radius: 15px; border: 1px solid #eee; text-align: center; font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;">
 <h3 style="color: #333; margin-bottom: 15px; font-size: 18px; font-weight: bold; line-height: 1.4;">商品の導入、詳細はお気軽にお問い合わせください</h3>
@@ -452,7 +462,9 @@ function AppContent() {
       instagramBusinessId: '',
       instagramAppId: '',
       instagramAppSecret: '',
-      isShortLivedToken: false
+      isShortLivedToken: false,
+      salonProfiles: [] as SalonProfile[],
+      selectedSalonId: '',
     };
     const saved = localStorage.getItem('blog_settings_v3');
     if (saved) {
@@ -541,6 +553,12 @@ function AppContent() {
   const [newWpSite, setNewWpSite] = useState<Omit<WpSite, 'id'>>({
     name: '', url: '', username: '', appPassword: '', newsSlug: 'news'
   });
+  const [showSalonManager, setShowSalonManager] = useState(false);
+  const [editingSalon, setEditingSalon] = useState<SalonProfile | null>(null);
+  const [newSalon, setNewSalon] = useState<Omit<SalonProfile, 'id'>>({
+    name: '', hpUrl: '', hotpepperUrl: '', instagramUrl: '', otherUrls: [], notes: ''
+  });
+  const [isFetchingUrls, setIsFetchingUrls] = useState(false);
 
   // Save presets to localStorage
   const savePresets = (newPresets: typeof policyPresets) => {
@@ -556,6 +574,70 @@ function AppContent() {
     linkElement.setAttribute('href', dataUri);
     linkElement.setAttribute('download', exportFileDefaultName);
     linkElement.click();
+  };
+
+  const exportPostsAsCsv = () => {
+    const headers = ['タイトル', 'メタディスクリプション', '本文(プレーン)', 'インスタキャプション', 'インスタハッシュタグ', 'Threadsキャプション', '画像URL', '生成日時'];
+    const rows = blogPosts.map(p => [
+      p.title || '',
+      p.metaDescription || '',
+      (p.plainContent || p.content || '').replace(/"/g, '""'),
+      p.instaCaption || '',
+      (p.instaHashtags || []).join(' '),
+      p.threadsCaption || '',
+      p.imageUrl || '',
+      p.scheduledAt ? new Date(p.scheduledAt).toLocaleString('ja-JP') : ''
+    ]);
+    const csv = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/\n/g, '\\n')}"`).join(',')).join('\n');
+    const bom = '﻿';
+    const blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `articles_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const fetchUrlContent = async (url: string): Promise<string> => {
+    if (!url) return '';
+    try {
+      const res = await fetch('/api/fetch-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      });
+      const data = await res.json();
+      return data.content || '';
+    } catch {
+      return '';
+    }
+  };
+
+  const buildSalonContext = async (salon: SalonProfile): Promise<string> => {
+    setIsFetchingUrls(true);
+    const urlMap: Record<string, string> = {
+      'HP': salon.hpUrl,
+      'ホットペッパー': salon.hotpepperUrl,
+      'Instagram': salon.instagramUrl,
+    };
+    salon.otherUrls.forEach((u, i) => { if (u) urlMap[`参考URL${i + 1}`] = u; });
+
+    let context = `【サロン情報: ${salon.name}】\n`;
+    if (salon.notes) context += `メモ: ${salon.notes}\n`;
+    context += '\n';
+
+    for (const [label, url] of Object.entries(urlMap)) {
+      if (!url) continue;
+      const content = await fetchUrlContent(url);
+      if (content) {
+        context += `---[${label}: ${url}]---\n${content.substring(0, 3000)}\n\n`;
+      } else {
+        context += `---[${label}: ${url}]---\n(取得できませんでした)\n\n`;
+      }
+    }
+    setIsFetchingUrls(false);
+    return context;
   };
 
   const importPosts = (e: ChangeEvent<HTMLInputElement>) => {
@@ -755,8 +837,16 @@ ${rawText}`;
       ];
       const selectedAngle = angles[Math.floor(Math.random() * angles.length)];
 
+      // サロン情報の取得
+      const selectedSalon = blogSettings.salonProfiles.find(s => s.id === blogSettings.selectedSalonId);
+      let salonContext = '';
+      if (selectedSalon) {
+        setState(prev => ({ ...prev, progressMessage: `${selectedSalon.name}のURL情報を読み込み中...` }));
+        salonContext = await buildSalonContext(selectedSalon);
+      }
+
       const tools: any[] = [];
-      if (blogSettings.sourceUrl) {
+      if (blogSettings.sourceUrl || selectedSalon) {
         tools.push({ urlContext: {} });
       }
       if (blogSettings.useGoogleSearch) {
@@ -777,11 +867,12 @@ ${rawText}`;
       - 文体・トーン: ${blogSettings.tone || '専門的・信頼感重視'}
       - 記事の目的: ${blogSettings.how || '理解してもらう'}
       ${blogSettings.detailedInstructions ? `追加指示: ${blogSettings.detailedInstructions}` : ''}
-      
+      ${salonContext ? `\n【サロン参考情報（登録URLから取得）】\n${salonContext}\n上記のサロン情報を十分に理解し、そのサロンの特徴・強み・メニューを反映した記事を作成してください。` : ''}
+
       【今回の執筆スタイル（多様性の確保）】
       今回の記事は「${selectedAngle}」のスタイルで執筆してください。
       前回の記事と似たような構成にならないよう、文頭の表現や見出しの付け方を工夫し、読者が飽きない独自性のある内容にしてください。
-      
+
       クライアントのサロンの課題を解決し、読者に価値を提供するブログ記事と、それに対応するInstagram投稿用のキャプションを作成してください。
       
       【情報ソースの扱い】
@@ -2478,6 +2569,56 @@ ${rawText}`;
               className="glass rounded-2xl p-6 space-y-6"
             >
               <div className="space-y-6">
+
+                  {/* サロン選択 */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold uppercase tracking-widest text-black/40 flex items-center space-x-2">
+                        <Globe size={14} className="text-gold" />
+                        <span>サロン選択</span>
+                      </label>
+                      <button
+                        onClick={() => setShowSalonManager(true)}
+                        className="text-[10px] text-gold hover:underline flex items-center space-x-1"
+                      >
+                        <Settings size={10} />
+                        <span>サロンを管理</span>
+                      </button>
+                    </div>
+                    <div className="flex space-x-2">
+                      <select
+                        value={blogSettings.selectedSalonId}
+                        onChange={(e) => setBlogSettings({ ...blogSettings, selectedSalonId: e.target.value })}
+                        className="flex-1 bg-black/5 border border-black/10 rounded-lg px-3 py-2 text-xs text-black/80 focus:outline-none focus:border-gold/50 appearance-none"
+                      >
+                        <option value="">-- サロンを選択しない --</option>
+                        {blogSettings.salonProfiles.map(s => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                      </select>
+                      {blogSettings.selectedSalonId && (
+                        <button
+                          onClick={() => setBlogSettings({ ...blogSettings, selectedSalonId: '' })}
+                          className="p-2 text-black/30 hover:text-red-400 transition-colors"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                    {blogSettings.selectedSalonId && (() => {
+                      const s = blogSettings.salonProfiles.find(p => p.id === blogSettings.selectedSalonId);
+                      if (!s) return null;
+                      return (
+                        <div className="bg-gold/5 border border-gold/20 rounded-xl px-3 py-2 space-y-1">
+                          {[s.hpUrl, s.hotpepperUrl, s.instagramUrl, ...s.otherUrls].filter(Boolean).map((url, i) => (
+                            <p key={i} className="text-[9px] text-black/40 truncate">🔗 {url}</p>
+                          ))}
+                          {isFetchingUrls && <p className="text-[9px] text-gold animate-pulse">URL情報を読み込み中...</p>}
+                        </div>
+                      );
+                    })()}
+                  </div>
+
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-semibold uppercase tracking-widest text-black/40 flex items-center space-x-2">
@@ -4037,7 +4178,17 @@ ${rawText}`;
                     </h3>
                     <div className="flex items-center space-x-3">
                       {blogPosts.length > 0 && (
-                        <button 
+                        <button
+                          onClick={exportPostsAsCsv}
+                          className="px-3 py-1.5 bg-black/5 border border-black/10 rounded-lg text-[10px] text-black/50 hover:text-gold hover:border-gold/30 transition-all flex items-center space-x-1"
+                          title="CSV出力（ホットペッパー転記用）"
+                        >
+                          <FileText size={10} />
+                          <span>CSV出力</span>
+                        </button>
+                      )}
+                      {blogPosts.length > 0 && (
+                        <button
                           onClick={() => {
                             setBlogPosts([]);
                             localStorage.removeItem('blog_posts_history');
@@ -4623,6 +4774,168 @@ ${rawText}`;
                 >
                   追加する
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* サロン管理モーダル */}
+      <AnimatePresence>
+        {showSalonManager && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="p-6 border-b border-black/5 flex items-center justify-between bg-gold/5">
+                <div className="flex items-center space-x-3">
+                  <Globe className="text-gold" size={20} />
+                  <h3 className="text-sm font-bold">サロン管理</h3>
+                </div>
+                <button onClick={() => { setShowSalonManager(false); setEditingSalon(null); }}>
+                  <X size={20} className="text-black/40" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                {/* サロン一覧 */}
+                {blogSettings.salonProfiles.length === 0 ? (
+                  <p className="text-center text-[11px] text-black/30 py-8">登録されたサロンがありません</p>
+                ) : (
+                  <div className="space-y-3">
+                    {blogSettings.salonProfiles.map(salon => (
+                      <div key={salon.id} className="border border-black/10 rounded-xl p-4 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold">{salon.name}</span>
+                          <div className="flex space-x-2">
+                            <button onClick={() => setEditingSalon(salon)} className="text-[10px] text-gold hover:underline">編集</button>
+                            <button onClick={() => {
+                              setBlogSettings({
+                                ...blogSettings,
+                                salonProfiles: blogSettings.salonProfiles.filter(s => s.id !== salon.id),
+                                selectedSalonId: blogSettings.selectedSalonId === salon.id ? '' : blogSettings.selectedSalonId
+                              });
+                            }} className="text-[10px] text-red-400 hover:underline">削除</button>
+                          </div>
+                        </div>
+                        {[
+                          { label: 'HP', url: salon.hpUrl },
+                          { label: 'ホットペッパー', url: salon.hotpepperUrl },
+                          { label: 'Instagram', url: salon.instagramUrl },
+                          ...salon.otherUrls.map((u, i) => ({ label: `参考URL${i + 1}`, url: u }))
+                        ].filter(x => x.url).map((x, i) => (
+                          <p key={i} className="text-[9px] text-black/40 truncate">🔗 {x.label}: {x.url}</p>
+                        ))}
+                        {salon.notes && <p className="text-[9px] text-black/30 italic">{salon.notes}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* 追加・編集フォーム */}
+                {(editingSalon !== null || true) && (() => {
+                  const isEditing = editingSalon !== null;
+                  const form = isEditing ? editingSalon : newSalon;
+                  const setForm = isEditing
+                    ? (v: any) => setEditingSalon(v)
+                    : (v: any) => setNewSalon(v);
+
+                  return (
+                    <div className="border-t border-black/5 pt-6 space-y-4">
+                      <h4 className="text-[11px] font-bold uppercase tracking-widest text-black/40">
+                        {isEditing ? `「${editingSalon.name}」を編集` : '新しいサロンを追加'}
+                      </h4>
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-black/40 font-bold uppercase">サロン名</label>
+                          <input type="text" placeholder="例: エステサロンA" value={form.name}
+                            onChange={(e) => setForm({ ...form, name: e.target.value })}
+                            className="w-full bg-black/5 border border-black/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-gold/50" />
+                        </div>
+                        {[
+                          { key: 'hpUrl', label: 'HP URL', placeholder: 'https://salon-a.com' },
+                          { key: 'hotpepperUrl', label: 'ホットペッパー URL', placeholder: 'https://beauty.hotpepper.jp/...' },
+                          { key: 'instagramUrl', label: 'Instagram URL', placeholder: 'https://instagram.com/salon_a' },
+                        ].map(field => (
+                          <div key={field.key} className="space-y-1">
+                            <label className="text-[10px] text-black/40 font-bold uppercase">{field.label}</label>
+                            <input type="text" placeholder={field.placeholder} value={(form as any)[field.key]}
+                              onChange={(e) => setForm({ ...form, [field.key]: e.target.value })}
+                              className="w-full bg-black/5 border border-black/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-gold/50" />
+                          </div>
+                        ))}
+
+                        {/* その他のURL（動的追加） */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[10px] text-black/40 font-bold uppercase">その他の参考URL</label>
+                            <button onClick={() => setForm({ ...form, otherUrls: [...form.otherUrls, ''] })}
+                              className="text-[9px] text-gold hover:underline flex items-center space-x-1">
+                              <Plus size={9} /><span>追加</span>
+                            </button>
+                          </div>
+                          {form.otherUrls.map((url: string, i: number) => (
+                            <div key={i} className="flex space-x-2">
+                              <input type="text" placeholder={`参考URL ${i + 1}`} value={url}
+                                onChange={(e) => {
+                                  const next = [...form.otherUrls];
+                                  next[i] = e.target.value;
+                                  setForm({ ...form, otherUrls: next });
+                                }}
+                                className="flex-1 bg-black/5 border border-black/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-gold/50" />
+                              <button onClick={() => setForm({ ...form, otherUrls: form.otherUrls.filter((_: string, j: number) => j !== i) })}
+                                className="text-black/20 hover:text-red-400 transition-colors">
+                                <X size={12} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-black/40 font-bold uppercase">メモ・特記事項</label>
+                          <textarea placeholder="サロンの特徴、強み、注意点など..." value={form.notes}
+                            onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                            rows={3}
+                            className="w-full bg-black/5 border border-black/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-gold/50 resize-none" />
+                        </div>
+
+                        <div className="flex space-x-2">
+                          {isEditing && (
+                            <button onClick={() => setEditingSalon(null)}
+                              className="flex-1 py-2 border border-black/10 rounded-xl text-xs text-black/40 hover:bg-black/5 transition-all">
+                              キャンセル
+                            </button>
+                          )}
+                          <button
+                            onClick={() => {
+                              if (!form.name) return;
+                              if (isEditing) {
+                                setBlogSettings({
+                                  ...blogSettings,
+                                  salonProfiles: blogSettings.salonProfiles.map(s => s.id === editingSalon.id ? editingSalon : s)
+                                });
+                                setEditingSalon(null);
+                              } else {
+                                const id = `salon-${Date.now()}`;
+                                setBlogSettings({
+                                  ...blogSettings,
+                                  salonProfiles: [...blogSettings.salonProfiles, { id, ...newSalon }]
+                                });
+                                setNewSalon({ name: '', hpUrl: '', hotpepperUrl: '', instagramUrl: '', otherUrls: [], notes: '' });
+                              }
+                            }}
+                            className="flex-1 bg-gold text-black font-bold py-2 rounded-xl text-xs hover:bg-gold/80 transition-all"
+                          >
+                            {isEditing ? '更新する' : '登録する'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </motion.div>
           </div>

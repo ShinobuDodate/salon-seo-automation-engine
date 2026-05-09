@@ -65,6 +65,34 @@ async function startServer() {
     }
   });
 
+  // URL fetch proxy (for reading salon reference pages)
+  app.post("/api/fetch-url", async (req, res) => {
+    const { url } = req.body;
+    if (!url) return res.status(400).json({ error: "URL required" });
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'text/html,application/xhtml+xml,*/*',
+          'Accept-Language': 'ja,en;q=0.9',
+        },
+        signal: AbortSignal.timeout(10000)
+      });
+      const html = await response.text();
+      // Strip HTML tags and compress whitespace
+      const text = html
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s{2,}/g, ' ')
+        .trim()
+        .substring(0, 8000);
+      res.json({ content: text, url });
+    } catch (error: any) {
+      res.json({ content: '', url, error: error.message });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
