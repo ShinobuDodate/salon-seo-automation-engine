@@ -4,12 +4,12 @@ import { useState, ChangeEvent, useEffect, Component, ErrorInfo, ReactNode } fro
 import React from 'react';
 import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 import { motion, AnimatePresence } from "motion/react";
-import { 
-  Sparkles, 
-  Play, 
-  Loader2, 
-  Calendar, 
-  CheckCircle, 
+import {
+  Sparkles,
+  Play,
+  Loader2,
+  Calendar,
+  CheckCircle,
   AlertCircle,
   Zap,
   Image as ImageIcon,
@@ -23,7 +23,9 @@ import {
   Eye,
   Save,
   FileText,
-  Globe
+  Globe,
+  RefreshCw,
+  Database
 } from "lucide-react";
 
 // --- Types ---
@@ -559,6 +561,15 @@ function AppContent() {
     name: '', hpUrl: '', hotpepperUrl: '', instagramUrl: '', otherUrls: [], notes: ''
   });
   const [isFetchingUrls, setIsFetchingUrls] = useState(false);
+  const [showSupabasePanel, setShowSupabasePanel] = useState(false);
+  const [supabasePosts, setSupabasePosts] = useState<any[]>([]);
+  const [isFetchingSupabase, setIsFetchingSupabase] = useState(false);
+  const [loopModal, setLoopModal] = useState<{
+    post: BlogPost | null;
+    loopEnabled: boolean;
+    loopIntervalDays: number;
+    saving: boolean;
+  }>({ post: null, loopEnabled: true, loopIntervalDays: 30, saving: false });
 
   // Save presets to localStorage
   const savePresets = (newPresets: typeof policyPresets) => {
@@ -2464,6 +2475,103 @@ ${rawText}`;
       });
     } finally {
       setState({ status: 'completed' });
+    }
+  };
+
+  const fetchSupabasePosts = async () => {
+    setIsFetchingSupabase(true);
+    try {
+      const res = await fetch('/api/scheduled-posts');
+      const data = await res.json();
+      setSupabasePosts(Array.isArray(data) ? data : []);
+    } catch {
+      setNotification({ message: 'Supabase取得エラー', type: 'error' });
+    } finally {
+      setIsFetchingSupabase(false);
+    }
+  };
+
+  const deleteSupabasePost = async (id: string) => {
+    try {
+      await fetch(`/api/scheduled-post/${id}`, { method: 'DELETE' });
+      setSupabasePosts(prev => prev.filter(p => p.id !== id));
+      setNotification({ message: '予約を削除しました', type: 'success' });
+    } catch {
+      setNotification({ message: '削除エラー', type: 'error' });
+    }
+  };
+
+  const publishSupabasePostNow = async (id: string) => {
+    try {
+      await fetch(`/api/scheduled-post/${id}/publish`, { method: 'POST' });
+      setNotification({ message: '投稿処理を開始しました（バックグラウンドで実行中）', type: 'success' });
+      setTimeout(fetchSupabasePosts, 5000);
+    } catch {
+      setNotification({ message: '投稿エラー', type: 'error' });
+    }
+  };
+
+  const saveToSupabase = async (post: BlogPost, loopEnabled: boolean, loopIntervalDays: number) => {
+    setLoopModal(prev => ({ ...prev, saving: true }));
+    try {
+      const wpSite = blogSettings.wpSites?.find((s: WpSite) => s.id === blogSettings.selectedWpSiteId);
+      const instaAccount = blogSettings.socialAccounts.find((a: SocialAccount) => a.platform === 'instagram' && (post.selectedSocialAccounts?.includes(a.id) || blogSettings.destinations.includes('instagram')));
+      const threadsAccount = blogSettings.socialAccounts.find((a: SocialAccount) => a.platform === 'threads' && (post.selectedSocialAccounts?.includes(a.id) || blogSettings.destinations.includes('threads')));
+      const hasWp = blogSettings.destinations.includes('blog') || blogSettings.destinations.includes('news');
+      const hasInsta = !!(instaAccount || (blogSettings.instagramBusinessId && blogSettings.instagramAccessToken));
+      const hasThreads = !!threadsAccount;
+
+      const bottomContent = blogSettings.commonContents.find((c: CommonContent) => c.id === blogSettings.selectedBottomContentId);
+      const bottomHtml = bottomContent
+        ? (bottomContent.type === 'plain'
+            ? `<div style="margin: 30px 0; padding: 20px; background: #f9f9f9; border-radius: 10px; border: 1px solid #eee; text-align: center; color: #666; font-size: 14px; line-height: 1.8;">${bottomContent.content.replace(/\n/g, '<br>')}</div>`
+            : bottomContent.content)
+        : '';
+
+      const payload = {
+        scheduled_at: post.scheduledAt,
+        title: post.title,
+        content: post.content,
+        meta_description: post.metaDescription,
+        image_url: (post.imageUrl && !post.imageUrl.startsWith('data:')) ? post.imageUrl : null,
+        image_base64: post.imageBase64 || null,
+        keywords: post.keywords || [],
+        insta_caption: post.instaCaption || null,
+        insta_hashtags: typeof post.instaHashtags === 'string' ? post.instaHashtags : (post.instaHashtags as string[] | undefined)?.join(' ') || null,
+        threads_caption: post.threadsCaption || null,
+        bottom_content_html: bottomHtml || null,
+        post_to_wp: hasWp,
+        post_to_instagram: hasInsta,
+        post_to_threads: hasThreads,
+        wp_url: wpSite?.url || blogSettings.targetUrl || null,
+        wp_username: wpSite?.username || blogSettings.username || null,
+        wp_app_password: wpSite?.appPassword || blogSettings.appPassword || null,
+        wp_news_slug: wpSite?.newsSlug || blogSettings.newsSlug || 'news',
+        wp_category_id: blogSettings.categoryId || null,
+        wp_destinations: blogSettings.destinations.filter((d: string) => ['blog', 'news'].includes(d)),
+        instagram_account_id: instaAccount?.pageId || blogSettings.instagramBusinessId || null,
+        instagram_access_token: instaAccount?.accessToken || blogSettings.instagramAccessToken || null,
+        threads_user_id: threadsAccount?.pageId || null,
+        threads_access_token: threadsAccount?.accessToken || null,
+        loop_enabled: loopEnabled,
+        loop_interval_days: loopIntervalDays,
+      };
+
+      const res = await fetch('/api/schedule-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      setNotification({ message: `「${post.title}」をSupabaseに予約しました！${loopEnabled ? `（${loopIntervalDays}日ごとにループ）` : ''}`, type: 'success' });
+      setLoopModal({ post: null, loopEnabled: true, loopIntervalDays: 30, saving: false });
+      setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, status: 'scheduled' } : p));
+      if (showSupabasePanel) fetchSupabasePosts();
+    } catch (e: any) {
+      setNotification({ message: `Supabase保存エラー: ${e.message}`, type: 'error' });
+      setLoopModal(prev => ({ ...prev, saving: false }));
     }
   };
 
@@ -4445,6 +4553,16 @@ ${rawText}`;
                                     )}
                                     <span>{currentlyPostingId === post.id ? '送信中...' : '予約投稿'}</span>
                                   </button>
+
+                                  <button
+                                    onClick={() => setLoopModal({ post, loopEnabled: true, loopIntervalDays: 30, saving: false })}
+                                    disabled={currentlyPostingId === post.id}
+                                    className="text-[10px] flex items-center space-x-1 transition-all px-2 py-1 rounded-md text-purple-400 hover:bg-purple-500/10 hover:underline"
+                                    title="Supabaseに保存してサーバー側で自動投稿（ループ対応）"
+                                  >
+                                    <RefreshCw size={10} />
+                                    <span>ループ予約</span>
+                                  </button>
                                 </div>
                               )}
                               <div className="flex items-center space-x-3">
@@ -4487,6 +4605,104 @@ ${rawText}`;
           {/* Close grid */}
           </div>
 
+            {/* Supabase scheduled posts panel */}
+            <div className="mt-6">
+              <button
+                onClick={() => {
+                  setShowSupabasePanel(v => !v);
+                  if (!showSupabasePanel) fetchSupabasePosts();
+                }}
+                className="flex items-center space-x-2 px-4 py-2 bg-purple-50 border border-purple-200 rounded-xl text-xs font-bold text-purple-600 hover:bg-purple-100 transition-all"
+              >
+                <Database size={14} />
+                <span>Supabase予約一覧</span>
+                <ChevronDown size={12} className={`transition-transform ${showSupabasePanel ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showSupabasePanel && (
+                <div className="mt-3 bg-white border border-purple-100 rounded-2xl overflow-hidden shadow-sm">
+                  <div className="px-4 py-3 border-b border-purple-50 flex items-center justify-between">
+                    <span className="text-xs font-bold text-purple-600 flex items-center space-x-2">
+                      <Database size={12} />
+                      <span>自動投稿スケジュール（{supabasePosts.length}件）</span>
+                    </span>
+                    <button
+                      onClick={fetchSupabasePosts}
+                      disabled={isFetchingSupabase}
+                      className="text-[10px] text-purple-400 hover:text-purple-600 flex items-center space-x-1"
+                    >
+                      <RefreshCw size={10} className={isFetchingSupabase ? 'animate-spin' : ''} />
+                      <span>更新</span>
+                    </button>
+                  </div>
+                  {isFetchingSupabase && (
+                    <div className="p-6 text-center text-xs text-black/40 flex items-center justify-center space-x-2">
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>読み込み中...</span>
+                    </div>
+                  )}
+                  {!isFetchingSupabase && supabasePosts.length === 0 && (
+                    <div className="p-6 text-center text-xs text-black/30">
+                      予約済み記事はありません。記事カードの「ループ予約」ボタンから追加できます。
+                    </div>
+                  )}
+                  {!isFetchingSupabase && supabasePosts.length > 0 && (
+                    <div className="divide-y divide-black/5 max-h-80 overflow-y-auto">
+                      {supabasePosts.map((sp) => (
+                        <div key={sp.id} className="px-4 py-3 flex items-center justify-between hover:bg-purple-50/50 transition-colors">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-black/80 truncate">{sp.title}</p>
+                            <div className="flex items-center space-x-2 mt-0.5 flex-wrap gap-1">
+                              <span className="text-[10px] text-black/40">
+                                {new Date(sp.scheduled_at).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                                sp.status === 'published' ? 'bg-emerald-100 text-emerald-600' :
+                                sp.status === 'failed' ? 'bg-red-100 text-red-600' :
+                                sp.status === 'publishing' ? 'bg-blue-100 text-blue-600 animate-pulse' :
+                                'bg-yellow-100 text-yellow-600'
+                              }`}>
+                                {sp.status === 'published' ? '投稿済' : sp.status === 'failed' ? '失敗' : sp.status === 'publishing' ? '投稿中' : '予約中'}
+                              </span>
+                              {sp.loop_enabled && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-600 font-bold flex items-center space-x-0.5">
+                                  <RefreshCw size={8} />
+                                  <span>{sp.loop_interval_days}日ループ{sp.loop_count > 0 ? `（${sp.loop_count}回目）` : ''}</span>
+                                </span>
+                              )}
+                              {sp.post_to_wp && <span className="text-[10px] text-black/30">WP</span>}
+                              {sp.post_to_instagram && <span className="text-[10px] text-black/30">Insta</span>}
+                              {sp.post_to_threads && <span className="text-[10px] text-black/30">Threads</span>}
+                            </div>
+                            {sp.error_message && (
+                              <p className="text-[10px] text-red-400 mt-0.5 truncate">{sp.error_message}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center space-x-2 ml-3 flex-shrink-0">
+                            {sp.status === 'pending' && (
+                              <button
+                                onClick={() => publishSupabasePostNow(sp.id)}
+                                className="text-[10px] text-emerald-500 hover:underline flex items-center space-x-1"
+                              >
+                                <Play size={9} />
+                                <span>今すぐ</span>
+                              </button>
+                            )}
+                            <button
+                              onClick={() => deleteSupabasePost(sp.id)}
+                              className="p-1 text-black/20 hover:text-red-400 transition-colors"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             {}
             <div className="mt-6 flex flex-wrap gap-3">
               <div className="glass px-4 py-2 rounded-full flex items-center space-x-2 text-[10px] uppercase tracking-widest font-semibold text-black/60">
@@ -4504,10 +4720,110 @@ ${rawText}`;
             </div>
         </main>
 
+      {/* Loop modal */}
+      <AnimatePresence>
+        {loopModal.post && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+            onClick={() => !loopModal.saving && setLoopModal(prev => ({ ...prev, post: null }))}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl space-y-5"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-sm text-purple-700 flex items-center space-x-2">
+                  <RefreshCw size={16} />
+                  <span>Supabaseループ予約</span>
+                </h3>
+                <button onClick={() => setLoopModal(prev => ({ ...prev, post: null }))} className="text-black/30 hover:text-black/60">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <p className="text-xs text-black/60 bg-purple-50 rounded-xl px-3 py-2 truncate">
+                「{loopModal.post.title}」
+              </p>
+
+              <div className="space-y-1">
+                <label className="text-[10px] text-black/40 uppercase font-bold">投稿予定日時</label>
+                <p className="text-sm font-semibold text-black/80">
+                  {new Date(loopModal.post.scheduledAt).toLocaleString('ja-JP')}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="flex items-center space-x-3 cursor-pointer">
+                  <div
+                    onClick={() => setLoopModal(prev => ({ ...prev, loopEnabled: !prev.loopEnabled }))}
+                    className={`w-10 h-6 rounded-full relative transition-colors ${loopModal.loopEnabled ? 'bg-purple-500' : 'bg-black/20'}`}
+                  >
+                    <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${loopModal.loopEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-black/80">ループ投稿を有効にする</p>
+                    <p className="text-[10px] text-black/40">投稿後に同じ記事を自動で再予約</p>
+                  </div>
+                </label>
+
+                {loopModal.loopEnabled && (
+                  <div className="space-y-1 pl-13">
+                    <label className="text-[10px] text-black/40 uppercase font-bold">ループ間隔（日数）</label>
+                    <div className="flex items-center space-x-2">
+                      {[7, 14, 30, 60].map(d => (
+                        <button
+                          key={d}
+                          onClick={() => setLoopModal(prev => ({ ...prev, loopIntervalDays: d }))}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                            loopModal.loopIntervalDays === d
+                              ? 'bg-purple-500 text-white border-purple-500'
+                              : 'bg-white text-black/50 border-black/10 hover:border-purple-300'
+                          }`}
+                        >
+                          {d}日
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-purple-500 mt-1">
+                      月300記事 → 1日10記事 × 30日間隔
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-black/5 rounded-xl p-3 text-[10px] text-black/50 space-y-1">
+                <p>✓ サーバーが1分ごとに自動チェック・投稿</p>
+                <p>✓ WP・Instagram・Threads に同時投稿</p>
+                {loopModal.loopEnabled && <p>✓ {loopModal.loopIntervalDays}日後に同じ記事を再投稿</p>}
+              </div>
+
+              <button
+                onClick={() => loopModal.post && saveToSupabase(loopModal.post, loopModal.loopEnabled, loopModal.loopIntervalDays)}
+                disabled={loopModal.saving}
+                className={`w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center space-x-2 ${
+                  loopModal.saving
+                    ? 'bg-purple-200 text-purple-400 cursor-not-allowed'
+                    : 'bg-purple-600 text-white hover:bg-purple-700 shadow-lg shadow-purple-200'
+                }`}
+              >
+                {loopModal.saving ? <Loader2 size={16} className="animate-spin" /> : <Database size={16} />}
+                <span>{loopModal.saving ? '保存中...' : 'Supabaseに予約する'}</span>
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {}
       <AnimatePresence>
         {editingPost && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
