@@ -2646,8 +2646,14 @@ ${rawText}`;
             : bottomContent.content)
         : '';
 
+      // ループ設定時、元の予約時刻が過去なら「今 + 1インターバル」を初回時刻にする
+      const baseTime = new Date(post.scheduledAt).getTime();
+      const firstScheduledAt = loopEnabled && baseTime <= Date.now()
+        ? new Date(Date.now() + loopIntervalDays * 60 * 1000).toISOString()
+        : post.scheduledAt;
+
       const payload = {
-        scheduled_at: post.scheduledAt,
+        scheduled_at: firstScheduledAt,
         title: post.title,
         content: post.content,
         meta_description: post.metaDescription,
