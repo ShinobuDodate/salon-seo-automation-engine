@@ -1914,9 +1914,6 @@ ${rawText}`;
       return { success: false, error: 'Threadsに画像付きで投稿するには公開URLが必要です。WordPressへのアップロードが失敗した可能性があります。' };
     }
 
-    const isScheduled = !!scheduledAt && new Date(scheduledAt).getTime() > Date.now() + 60000;
-    const scheduledUnix = isScheduled ? Math.floor(new Date(scheduledAt!).getTime() / 1000) : null;
-
     try {
       // 1. Create Threads Media Container
       const bodyPayload: any = { text: caption };
@@ -1926,11 +1923,6 @@ ${rawText}`;
         bodyPayload.image_url = imageUrl;
       } else {
         bodyPayload.media_type = 'TEXT';
-      }
-
-      if (isScheduled && scheduledUnix) {
-        bodyPayload.published = false;
-        bodyPayload.scheduled_publish_time = scheduledUnix;
       }
 
       const containerRes = await fetch(
@@ -1951,11 +1943,7 @@ ${rawText}`;
         throw new Error('Threads Creation ID が取得できませんでした。');
       }
 
-      // 2. Publish Threads Media (skip when scheduled — platform auto-publishes)
-      if (isScheduled) {
-        return { success: true, id: creationId, scheduled: true };
-      }
-
+      // 2. Publish Threads Media
       let publishRes;
       let publishData;
       let retries = 0;
@@ -2500,7 +2488,6 @@ ${rawText}`;
           const threadsAccounts = blogSettings.socialAccounts.filter((a: SocialAccount) => a.platform === 'threads');
           for (const acc of threadsAccounts) {
             threadsResult = await postToThreads(uploadedImageUrl, threadsCaption, acc);
-          }
           }
         }
       }
