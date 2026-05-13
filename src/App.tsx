@@ -873,12 +873,24 @@ ${rawText}`;
         tools.push({ googleSearch: {} });
       }
 
-      const fileParts = blogSettings.sourceFiles.map(f => ({
-        inlineData: {
-          data: f.data,
-          mimeType: f.mimeType
+      // ファイルがある場合は事前にテキスト抽出（inlineData+JSON+toolsの同時使用はGemini非対応のため）
+      let fileContext = '';
+      if (blogSettings.sourceFiles.length > 0) {
+        try {
+          if (!isBatchMode) setState(prev => ({ ...prev, progressMessage: '資料ファイルを解析中...' }));
+          const extractAi = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+          const extractParts = blogSettings.sourceFiles.map(f => ({
+            inlineData: { data: f.data, mimeType: f.mimeType }
+          }));
+          const extractResponse = await callGeminiWithRetry(() => extractAi.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: { parts: [...extractParts, { text: 'このファイルの内容を詳しく要約してください。重要な情報・数値・固有名詞をすべて含めてください。' }] }
+          }));
+          fileContext = extractResponse?.text || '';
+        } catch (e) {
+          console.error('File extraction error:', e);
         }
-      }));
+      }
 
       const contentPrompt = `あなたは美容サロン専門のSEOライターです。
       【執筆方針】
@@ -900,7 +912,7 @@ ${rawText}`;
         ? '【最重要・厳守】外部の知識や創作は一切排除し、提供された「資料ファイル」および「指定URL」の内容のみをソースとして記事を作成してください。資料にない情報は絶対に書かないでください。'
         : '提供された資料やURLの内容を主軸にしつつ、あなたの持つ専門知識や最新の美容トレンドを交えて、読者にとってより有益で深みのある記事を作成してください。'}
 
-      ${blogSettings.sourceFiles.length > 0 ? `・添付された資料ファイルの内容を正確に反映させてください。` : ''}
+      ${fileContext ? `【資料ファイルの内容】\n${fileContext}\n上記の資料内容を正確に反映させてください。` : ''}
       ${blogSettings.sourceUrl ? `・指定URLの内容を参考にしてください: ${blogSettings.sourceUrl}` : ''}
       ${blogSettings.useGoogleSearch ? `・Google検索を使用して、関連する最新情報やトレンドを補足してください。` : ''}
 
@@ -958,12 +970,7 @@ ${rawText}`;
 
       const contentResponse = await callGeminiWithRetry(() => ai.models.generateContent({
         model: modelName,
-        contents: {
-          parts: [
-            ...fileParts,
-            { text: contentPrompt }
-          ]
-        },
+        contents: contentPrompt,
         config: { 
           responseMimeType: "application/json",
           responseSchema: {
