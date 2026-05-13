@@ -4361,6 +4361,14 @@ ${rawText}`;
                         <span>{state.status === 'generating' ? '記事を生成中...' : 'AIで一括生成を開始'}</span>
                       </button>
 
+                      <button
+                        onClick={generateEmptyBatchPosts}
+                        className="w-full py-3 rounded-xl font-bold text-xs tracking-wide transition-all border border-black/10 bg-white hover:bg-black/5 flex items-center justify-center space-x-2 text-black/50"
+                      >
+                        <Plus size={14} />
+                        <span>空箱を作成（手動記入用）</span>
+                      </button>
+
                       <p className="text-[9px] text-black/30 leading-tight bg-black/5 p-2 rounded border border-black/10">
                         <span className="text-amber-600 font-bold">【重要：投稿先について】</span><br />
                         ・<span className="font-bold">お知らせ（news）</span>：WordPress側に「news」というスラッグのカスタム投稿タイプが作成されている必要があります。無い場合はエラーになります。<br />
