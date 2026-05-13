@@ -1455,6 +1455,7 @@ ${rawText}`;
 
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [isScanningTypes, setIsScanningTypes] = useState(false);
+  const [isGeneratingImages, setIsGeneratingImages] = useState(false);
   const [availablePostTypes, setAvailablePostTypes] = useState<{slug: string, name: string}[]>([]);
   const [connectionTestResult, setConnectionTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [wpCategories, setWpCategories] = useState<{id: number, name: string}[]>([]);
@@ -1617,6 +1618,47 @@ ${rawText}`;
     } finally {
       setIsScanningTypes(false);
     }
+  };
+
+  const handleGenerateImages = async () => {
+    if (blogPosts.length === 0) {
+      setNotification({ message: '記事がありません。先に記事を生成してください。', type: 'error' });
+      return;
+    }
+    setIsGeneratingImages(true);
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const imageStyles = [
+      'A luxurious and calming beauty salon atmosphere, soft lighting, premium aesthetic.',
+      'A modern and stylish salon interior, minimalist design, elegant decor.',
+      'A friendly interaction between a professional therapist and a client, warm and welcoming.',
+      'A detail-oriented shot of premium beauty products or equipment, high-end feel.'
+    ];
+    let successCount = 0;
+    for (const post of blogPosts) {
+      try {
+        const selectedImageStyle = imageStyles[Math.floor(Math.random() * imageStyles.length)];
+        const keywordsString = (post.keywords || []).join(', ');
+        const imagePrompt = blogSettings.customImagePrompt
+          ? `${blogSettings.customImagePrompt}. Keywords: ${keywordsString}. STRICT RULE: DO NOT include any text, letters, or characters in the image.`
+          : `${selectedImageStyle} This image is for a Japanese beauty salon blog article. Title: "${post.title}". Summary: "${post.metaDescription || ''}". Professional photography, 4k. STRICT RULE: DO NOT include any text, letters, or characters in the image. Keywords: ${keywordsString}`;
+        const imageResponse = await callGeminiWithRetry(() => ai.models.generateContent({
+          model: 'gemini-2.5-flash-image',
+          contents: imagePrompt,
+          config: { imageConfig: { aspectRatio: "16:9" } }
+        }));
+        const firstPart = imageResponse.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
+        if (firstPart?.inlineData) {
+          const imageBase64 = firstPart.inlineData.data;
+          const imageUrl = `data:image/png;base64,${imageBase64}`;
+          setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, imageUrl, imageBase64 } : p));
+          successCount++;
+        }
+      } catch (e) {
+        console.error(`Image generation failed for "${post.title}":`, e);
+      }
+    }
+    setNotification({ message: `${successCount}/${blogPosts.length}件の画像を生成しました。`, type: 'success' });
+    setIsGeneratingImages(false);
   };
 
   const testWordPressConnection = async () => {
@@ -4262,6 +4304,23 @@ ${rawText}`;
                           )}
                         </motion.div>
                       )}
+
+                      <button
+                        onClick={handleGenerateImages}
+                        disabled={isGeneratingImages || blogPosts.length === 0}
+                        className={`w-full py-3 rounded-xl text-[11px] font-bold uppercase tracking-widest border transition-all flex items-center justify-center space-x-2 ${
+                          isGeneratingImages || blogPosts.length === 0
+                            ? 'bg-black/5 border-black/10 text-black/30 cursor-not-allowed'
+                            : 'bg-purple-500/10 border-purple-500/30 text-purple-600 hover:bg-purple-500/20'
+                        }`}
+                      >
+                        {isGeneratingImages ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <ImageIcon size={14} />
+                        )}
+                        <span>{isGeneratingImages ? `画像生成中...` : `画像生成を実行（${blogPosts.length}件）`}</span>
+                      </button>
 
                       <p className="text-[9px] text-black/30 leading-tight bg-black/5 p-2 rounded border border-black/10">
                         <span className="text-amber-600 font-bold">【重要：投稿先について】</span><br />
