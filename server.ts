@@ -323,6 +323,22 @@ async function startServer() {
     }
   });
 
+  // Instagram token extension proxy (avoids CORS in iframe)
+  app.get("/api/extend-token", async (req, res) => {
+    const { client_id, client_secret, fb_exchange_token } = req.query as Record<string, string>;
+    if (!client_id || !client_secret || !fb_exchange_token) {
+      return res.status(400).json({ error: { message: 'client_id, client_secret, fb_exchange_token are required' } });
+    }
+    try {
+      const url = `https://graph.facebook.com/v19.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${encodeURIComponent(client_id)}&client_secret=${encodeURIComponent(client_secret)}&fb_exchange_token=${encodeURIComponent(fb_exchange_token)}`;
+      const response = await fetch(url);
+      const data = await response.json();
+      res.status(response.status).json(data);
+    } catch (e: any) {
+      res.status(500).json({ error: { message: e.message } });
+    }
+  });
+
   // URL fetch proxy (for reading salon reference pages)
   app.post("/api/fetch-url", async (req, res) => {
     const { url } = req.body;

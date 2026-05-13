@@ -2006,38 +2006,42 @@ ${rawText}`;
   };
 
   const extendInstagramToken = async () => {
-    const token = blogSettings.instagramAccessToken.trim();
+    // フォーム入力中のトークンを優先して読む
+    const token = (newAccountData.accessToken || blogSettings.instagramAccessToken || '').trim();
     const appId = blogSettings.instagramAppId.trim();
     const appSecret = blogSettings.instagramAppSecret.trim();
 
-    if (!token || !appId || !appSecret) {
-      setNotification({ message: 'アクセストークン、アプリID、App Secretをすべて入力してください。', type: 'error' });
+    if (!token) {
+      setNotification({ message: 'アクセストークンを入力してください。（EAAから始まる文字列）', type: 'error' });
+      return;
+    }
+    if (!appId || !appSecret) {
+      setNotification({ message: 'アプリIDとApp Secretを入力してください。', type: 'error' });
       return;
     }
 
     setIsExtendingToken(true);
     try {
       const res = await fetch(
-        `https://graph.facebook.com/v19.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${token}`
+        `/api/extend-token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${encodeURIComponent(token)}`
       );
       const data = await res.json();
-      
+
       if (data.error) {
-        let errorMsg = data.error.message;
+        let errorMsg = data.error.message || JSON.stringify(data.error);
         if (errorMsg.includes('Error validating application')) {
-          errorMsg = 'アプリIDまたはApp Secretが正しくありません。コピーミスがないか確認してください。';
+          errorMsg = 'アプリIDまたはApp Secretが正しくありません。';
+        } else if (errorMsg.includes('Invalid OAuth access token')) {
+          errorMsg = 'トークンが無効または期限切れです。Graph APIエクスプローラで新しいトークンを発行してください。';
         }
         throw new Error(errorMsg);
       }
-      
+
       if (data.access_token) {
-        setBlogSettings({
-          ...blogSettings,
-          instagramAccessToken: data.access_token,
-          instagramAppId: appId,
-          instagramAppSecret: appSecret
-        });
-        setNotification({ message: 'トークンを60日間に延長しました！', type: 'success' });
+        // フォームのトークンも更新する
+        setNewAccountData(prev => ({ ...prev, accessToken: data.access_token }));
+        setBlogSettings(prev => ({ ...prev, instagramAccessToken: data.access_token, instagramAppId: appId, instagramAppSecret: appSecret }));
+        setNotification({ message: 'トークンを60日間に延長しました！フォームのトークンも更新されました。', type: 'success' });
       }
     } catch (error: any) {
       console.error('Token Extension Error:', error);
