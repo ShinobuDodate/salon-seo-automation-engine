@@ -569,8 +569,9 @@ function AppContent() {
     post: BlogPost | null;
     loopEnabled: boolean;
     loopIntervalDays: number;
+    loopTime: string; // "HH:MM" 空文字なら時刻指定なし
     saving: boolean;
-  }>({ post: null, loopEnabled: true, loopIntervalDays: 43200, saving: false });
+  }>({ post: null, loopEnabled: true, loopIntervalDays: 43200, loopTime: '', saving: false });
 
   const formatLoopInterval = (minutes: number) => {
     if (minutes < 60) return `${minutes}分`;
@@ -2629,7 +2630,7 @@ ${rawText}`;
     }
   };
 
-  const saveToSupabase = async (post: BlogPost, loopEnabled: boolean, loopIntervalDays: number) => {
+  const saveToSupabase = async (post: BlogPost, loopEnabled: boolean, loopIntervalDays: number, loopTime: string = '') => {
     setLoopModal(prev => ({ ...prev, saving: true }));
     try {
       const wpSite = blogSettings.wpSites?.find((s: WpSite) => s.id === blogSettings.selectedWpSiteId);
@@ -2646,11 +2647,23 @@ ${rawText}`;
             : bottomContent.content)
         : '';
 
-      // ループ設定時、元の予約時刻が過去なら「今 + 1インターバル」を初回時刻にする
-      const baseTime = new Date(post.scheduledAt).getTime();
-      const firstScheduledAt = loopEnabled && baseTime <= Date.now()
-        ? new Date(Date.now() + loopIntervalDays * 60 * 1000).toISOString()
-        : post.scheduledAt;
+      // ループ初回時刻の計算
+      let firstScheduledAt = post.scheduledAt;
+      if (loopEnabled) {
+        if (loopTime) {
+          // 時刻指定あり: 今日または明日の指定時刻を初回にする
+          const [hh, mm] = loopTime.split(':').map(Number);
+          const candidate = new Date();
+          candidate.setHours(hh, mm, 0, 0);
+          if (candidate.getTime() <= Date.now()) {
+            candidate.setDate(candidate.getDate() + 1); // 今日の時刻が過去なら明日
+          }
+          firstScheduledAt = candidate.toISOString();
+        } else if (new Date(post.scheduledAt).getTime() <= Date.now()) {
+          // 時刻指定なし・元の予約が過去 → 今 + 1インターバル
+          firstScheduledAt = new Date(Date.now() + loopIntervalDays * 60 * 1000).toISOString();
+        }
+      }
 
       const payload = {
         scheduled_at: firstScheduledAt,
@@ -2690,7 +2703,7 @@ ${rawText}`;
       if (data.error) throw new Error(data.error);
 
       setNotification({ message: `「${post.title}」をSupabaseに予約しました！${loopEnabled ? `（${formatLoopInterval(loopIntervalDays)}ごとにループ）` : ''}`, type: 'success' });
-      setLoopModal({ post: null, loopEnabled: true, loopIntervalDays: 43200, saving: false });
+      setLoopModal({ post: null, loopEnabled: true, loopIntervalDays: 43200, loopTime: '', saving: false });
       setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, status: 'scheduled' } : p));
       if (showSupabasePanel) fetchSupabasePosts();
     } catch (e: any) {
@@ -4676,7 +4689,7 @@ ${rawText}`;
                                   </button>
 
                                   <button
-                                    onClick={() => setLoopModal({ post, loopEnabled: true, loopIntervalDays: 43200, saving: false })}
+                                    onClick={() => setLoopModal({ post, loopEnabled: true, loopIntervalDays: 43200, loopTime: '', saving: false })}
                                     disabled={currentlyPostingId === post.id}
                                     className="text-[10px] flex items-center space-x-1 transition-all px-2 py-1 rounded-md text-purple-400 hover:bg-purple-500/10 hover:underline"
                                     title="Supabaseに保存してサーバー側で自動投稿（ループ対応）"
@@ -4908,31 +4921,57 @@ ${rawText}`;
                 </label>
 
                 {loopModal.loopEnabled && (
-                  <div className="space-y-1 pl-13">
-                    <label className="text-[10px] text-black/40 uppercase font-bold">ループ間隔</label>
-                    <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                      {[
-                        { label: '10分(テスト)', value: 10 },
-                        { label: '7日', value: 10080 },
-                        { label: '30日', value: 43200 },
-                        { label: '60日', value: 86400 },
-                      ].map(opt => (
-                        <button
-                          key={opt.value}
-                          onClick={() => setLoopModal(prev => ({ ...prev, loopIntervalDays: opt.value }))}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
-                            loopModal.loopIntervalDays === opt.value
-                              ? 'bg-purple-500 text-white border-purple-500'
-                              : 'bg-white text-black/50 border-black/10 hover:border-purple-300'
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
+                  <div className="space-y-3 pl-13">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-black/40 uppercase font-bold">ループ間隔</label>
+                      <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                        {[
+                          { label: '10分(テスト)', value: 10 },
+                          { label: '1日', value: 1440 },
+                          { label: '7日', value: 10080 },
+                          { label: '30日', value: 43200 },
+                          { label: '60日', value: 86400 },
+                        ].map(opt => (
+                          <button
+                            key={opt.value}
+                            onClick={() => setLoopModal(prev => ({ ...prev, loopIntervalDays: opt.value }))}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                              loopModal.loopIntervalDays === opt.value
+                                ? 'bg-purple-500 text-white border-purple-500'
+                                : 'bg-white text-black/50 border-black/10 hover:border-purple-300'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-purple-500 mt-1">
+                        月300記事 → 1日10記事 × 30日間隔
+                      </p>
                     </div>
-                    <p className="text-[10px] text-purple-500 mt-1">
-                      月300記事 → 1日10記事 × 30日間隔
-                    </p>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-black/40 uppercase font-bold">投稿時刻（任意）</label>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="time"
+                          value={loopModal.loopTime}
+                          onChange={e => setLoopModal(prev => ({ ...prev, loopTime: e.target.value }))}
+                          className="bg-white border border-black/10 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-purple-400"
+                        />
+                        {loopModal.loopTime && (
+                          <button
+                            onClick={() => setLoopModal(prev => ({ ...prev, loopTime: '' }))}
+                            className="text-[10px] text-black/30 hover:text-red-400"
+                          >クリア</button>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-black/30 leading-tight">
+                        {loopModal.loopTime
+                          ? `毎回 ${loopModal.loopTime} に投稿されます。夜中でも起きていなくてOK。`
+                          : '空欄 = 元の投稿時刻を引き継ぐ'}
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>
@@ -4940,11 +4979,11 @@ ${rawText}`;
               <div className="bg-black/5 rounded-xl p-3 text-[10px] text-black/50 space-y-1">
                 <p>✓ サーバーが1分ごとに自動チェック・投稿</p>
                 <p>✓ WP・Instagram・Threads に同時投稿</p>
-                {loopModal.loopEnabled && <p>✓ {formatLoopInterval(loopModal.loopIntervalDays)}後に同じ記事を再投稿</p>}
+                {loopModal.loopEnabled && <p>✓ {formatLoopInterval(loopModal.loopIntervalDays)}ごとに同じ記事を再投稿{loopModal.loopTime ? `（毎回 ${loopModal.loopTime}）` : ''}</p>}
               </div>
 
               <button
-                onClick={() => loopModal.post && saveToSupabase(loopModal.post, loopModal.loopEnabled, loopModal.loopIntervalDays)}
+                onClick={() => loopModal.post && saveToSupabase(loopModal.post, loopModal.loopEnabled, loopModal.loopIntervalDays, loopModal.loopTime)}
                 disabled={loopModal.saving}
                 className={`w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center space-x-2 ${
                   loopModal.saving
