@@ -107,6 +107,33 @@ async function publishToWordPress(post: any): Promise<{ success: boolean; wpPost
   return { success: false, error: lastError || 'WP post creation failed', imageUrl: uploadedImageUrl };
 }
 
+// --- Instagram Story publish ---
+async function publishToInstagramStory(imageUrl: string, accountId: string, accessToken: string): Promise<{ success: boolean; postId?: string; error?: string }> {
+  if (!imageUrl || !accountId || !accessToken) return { success: false, error: 'Instagram credentials or image URL missing' };
+  try {
+    const containerRes = await fetch(`https://graph.facebook.com/v19.0/${accountId}/media?access_token=${accessToken}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ media_type: 'STORIES', image_url: imageUrl })
+    });
+    const containerData = await containerRes.json();
+    if (containerData.error) throw new Error(`[Container] ${containerData.error.message}`);
+    const creationId = containerData.id;
+    if (!creationId) throw new Error('No creation ID from Instagram Stories');
+    await new Promise(r => setTimeout(r, 4000));
+    const publishRes = await fetch(`https://graph.facebook.com/v19.0/${accountId}/media_publish?access_token=${accessToken}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ creation_id: creationId })
+    });
+    const publishData = await publishRes.json();
+    if (publishData?.error) throw new Error(`[Publish] ${publishData.error.message}`);
+    return { success: true, postId: publishData.id };
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+}
+
 // --- Instagram publish ---
 async function publishToInstagram(imageUrl: string, caption: string, accountId: string, accessToken: string): Promise<{ success: boolean; postId?: string; error?: string }> {
   if (!imageUrl || !accountId || !accessToken) return { success: false, error: 'Instagram credentials or image URL missing' };
@@ -208,6 +235,13 @@ async function processScheduledPost(post: any) {
       const r = await publishToInstagram(imageUrl, caption, post.instagram_account_id, post.instagram_access_token);
       if (r.success) instagramPostId = r.postId;
       else errors.push(`Instagram: ${r.error}`);
+    }
+
+    // 2b. Instagram Stories
+    if (post.post_to_instagram_story && post.instagram_account_id && post.instagram_access_token && imageUrl) {
+      const r = await publishToInstagramStory(imageUrl, post.instagram_account_id, post.instagram_access_token);
+      if (!r.success) errors.push(`ストーリーズ: ${r.error}`);
+      else if (!instagramPostId) instagramPostId = r.postId; // hasSuccess用
     }
 
     // 3. Threads

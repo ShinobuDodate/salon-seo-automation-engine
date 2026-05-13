@@ -1813,6 +1813,35 @@ ${rawText}`;
     }
   };
 
+  const postToInstagramStory = async (imageUrl: string, account?: SocialAccount) => {
+    const accessToken = (account?.accessToken || blogSettings.instagramAccessToken || '').trim();
+    const businessId = (account?.pageId || blogSettings.instagramBusinessId || '').trim();
+    if (!accessToken || !businessId) return { success: false, error: 'Instagram設定が未完了です。' };
+    if (imageUrl.startsWith('data:')) return { success: false, error: 'ストーリーズには公開URLの画像が必要です。' };
+    try {
+      const containerRes = await fetch(
+        `https://graph.facebook.com/v19.0/${businessId}/media?access_token=${accessToken}`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ media_type: 'STORIES', image_url: imageUrl }) }
+      );
+      const containerData = await containerRes.json();
+      if (containerData.error) throw new Error(`[Container] ${containerData.error.message}`);
+      const creationId = containerData.id;
+      if (!creationId) throw new Error('Creation ID が取得できませんでした。');
+      await new Promise(r => setTimeout(r, 4000));
+      const publishRes = await fetch(
+        `https://graph.facebook.com/v19.0/${businessId}/media_publish?access_token=${accessToken}`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ creation_id: creationId }) }
+      );
+      const publishData = await publishRes.json();
+      if (publishData.error) throw new Error(`[Publish] ${publishData.error.message}`);
+      return { success: true, id: publishData.id };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  };
+
   const postToInstagram = async (imageUrl: string, caption: string, account?: SocialAccount) => {
     const accessToken = (account?.accessToken || blogSettings.instagramAccessToken || '').trim();
     const businessId = (account?.pageId || blogSettings.instagramBusinessId || '').trim();
@@ -2161,15 +2190,17 @@ ${rawText}`;
 
   const postToBlog = async (post: BlogPost, isImmediate: boolean = false, isBulk: boolean = false) => {
     const hasWpDestination = blogSettings.destinations.includes('blog') || blogSettings.destinations.includes('news');
-    
+
     // Check both global settings and post-specific selected accounts
-    const hasInstaDestination = blogSettings.destinations.includes('instagram') || 
-      (post.selectedSocialAccounts && post.selectedSocialAccounts.some(id => 
+    const hasInstaDestination = blogSettings.destinations.includes('instagram') ||
+      (post.selectedSocialAccounts && post.selectedSocialAccounts.some(id =>
         blogSettings.socialAccounts.find(a => a.id === id)?.platform === 'instagram'
       ));
-      
-    const hasThreadsDestination = blogSettings.destinations.includes('threads') || 
-      (post.selectedSocialAccounts && post.selectedSocialAccounts.some(id => 
+
+    const hasStoryDestination = blogSettings.destinations.includes('instagram_story');
+
+    const hasThreadsDestination = blogSettings.destinations.includes('threads') ||
+      (post.selectedSocialAccounts && post.selectedSocialAccounts.some(id =>
         blogSettings.socialAccounts.find(a => a.id === id)?.platform === 'threads'
       ));
 
@@ -2222,6 +2253,7 @@ ${rawText}`;
             bottom_content_html: bottomHtml || null,
             post_to_wp: hasWpDestination,
             post_to_instagram: hasInstaDestination,
+            post_to_instagram_story: hasStoryDestination,
             post_to_threads: hasThreadsDestination,
             wp_url: wpSite?.url || blogSettings.targetUrl || null,
             wp_username: wpSite?.username || blogSettings.username || null,
@@ -2448,11 +2480,12 @@ ${rawText}`;
 
       // Social Media Posting (即時投稿のみ。予約は上のSupabaseブロックで処理済み)
       let instaResult: any = null;
+      let storyResult: any = null;
       let threadsResult: any = null;
 
-      if (hasInstaDestination || hasThreadsDestination) {
-        if (hasInstaDestination && !uploadedImageUrl) {
-          throw new Error("Instagramへの投稿には画像が必須です。画像を設定してください。");
+      if (hasInstaDestination || hasStoryDestination || hasThreadsDestination) {
+        if ((hasInstaDestination || hasStoryDestination) && !uploadedImageUrl) {
+          throw new Error("Instagram/ストーリーズへの投稿には画像が必須です。画像を設定してください。");
         }
 
         const getCommonText = (id: string) => {
@@ -2477,6 +2510,22 @@ ${rawText}`;
             instaResult = await postToInstagram(uploadedImageUrl, instaCaption, undefined);
           } else {
             instaResult = { success: false, error: 'Instagram設定が未完了です。「ソーシャルアカウント」でアカウントを登録してください。' };
+          }
+        }
+
+        // Instagram ストーリーズ（即時）
+        if (hasStoryDestination && uploadedImageUrl) {
+          setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, postingMessage: 'Instagramストーリーズに投稿中...' } : p));
+          const instaAccounts = blogSettings.socialAccounts.filter((a: SocialAccount) => a.platform === 'instagram');
+          if (instaAccounts.length > 0) {
+            for (const acc of instaAccounts) {
+              const r = await postToInstagramStory(uploadedImageUrl, acc);
+              if (!storyResult) storyResult = r;
+            }
+          } else if (blogSettings.instagramBusinessId && blogSettings.instagramAccessToken) {
+            storyResult = await postToInstagramStory(uploadedImageUrl, undefined);
+          } else {
+            storyResult = { success: false, error: 'Instagram設定が未完了です。' };
           }
         }
 
@@ -2514,6 +2563,14 @@ ${rawText}`;
             msg = msg ? `${msg} / ${label}` : label;
           } else if (instaResult) {
             msg = msg ? `${msg} / Insta失敗: ${instaResult.error}` : `Insta失敗: ${instaResult.error}`;
+          }
+        }
+
+        if (hasStoryDestination) {
+          if (storyResult?.success) {
+            msg = msg ? `${msg} / ストーリーズ完了` : 'ストーリーズ完了';
+          } else if (storyResult) {
+            msg = msg ? `${msg} / ストーリーズ失敗: ${storyResult.error}` : `ストーリーズ失敗: ${storyResult.error}`;
           }
         }
 
@@ -2638,6 +2695,7 @@ ${rawText}`;
       const threadsAccount = blogSettings.socialAccounts.find((a: SocialAccount) => a.platform === 'threads' && (post.selectedSocialAccounts?.includes(a.id) || blogSettings.destinations.includes('threads')));
       const hasWp = blogSettings.destinations.includes('blog') || blogSettings.destinations.includes('news');
       const hasInsta = !!(instaAccount || (blogSettings.instagramBusinessId && blogSettings.instagramAccessToken));
+      const hasStory = blogSettings.destinations.includes('instagram_story');
       const hasThreads = !!threadsAccount;
 
       const bottomContent = blogSettings.commonContents.find((c: CommonContent) => c.id === blogSettings.selectedBottomContentId);
@@ -2679,6 +2737,7 @@ ${rawText}`;
         bottom_content_html: bottomHtml || null,
         post_to_wp: hasWp,
         post_to_instagram: hasInsta,
+        post_to_instagram_story: hasStory,
         post_to_threads: hasThreads,
         wp_url: wpSite?.url || blogSettings.targetUrl || null,
         wp_username: wpSite?.username || blogSettings.username || null,
@@ -4089,6 +4148,32 @@ ${rawText}`;
                                 <Instagram size={18} />
                                 <span className="text-[10px] font-bold uppercase tracking-widest">Instagram</span>
                                 <div className={`w-4 h-4 rounded flex items-center justify-center border ${isSelected ? 'bg-gold border-gold' : 'border-black/20 bg-white'}`}>
+                                  {isSelected && <span className="text-white text-[8px] font-black">✓</span>}
+                                </div>
+                              </button>
+                            );
+                          })()}
+
+                          {/* Instagram ストーリーズ カラム */}
+                          {(() => {
+                            const isSelected = blogSettings.destinations.includes('instagram_story');
+                            return (
+                              <button
+                                onClick={() => {
+                                  const newDest = isSelected
+                                    ? blogSettings.destinations.filter(d => d !== 'instagram_story')
+                                    : [...blogSettings.destinations, 'instagram_story'];
+                                  setBlogSettings({ ...blogSettings, destinations: newDest });
+                                }}
+                                className={`rounded-xl border flex flex-col items-center justify-center py-4 space-y-2 transition-all ${
+                                  isSelected
+                                    ? 'bg-pink-500/10 border-pink-400/40 text-pink-500'
+                                    : 'bg-black/5 border-black/10 text-black/40 hover:bg-black/10'
+                                }`}
+                              >
+                                <Instagram size={18} />
+                                <span className="text-[10px] font-bold uppercase tracking-widest">Story</span>
+                                <div className={`w-4 h-4 rounded flex items-center justify-center border ${isSelected ? 'bg-pink-500 border-pink-500' : 'border-black/20 bg-white'}`}>
                                   {isSelected && <span className="text-white text-[8px] font-black">✓</span>}
                                 </div>
                               </button>
