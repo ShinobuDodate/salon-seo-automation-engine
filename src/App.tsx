@@ -119,7 +119,7 @@ const COMMON_FOOTER = `<div style="margin-top: 50px; padding: 30px; background: 
 `;
 
 // --- Utilities ---
-const callGeminiWithRetry = async (fn: () => Promise<any>, maxRetries = 3, initialDelay = 2000) => {
+const callGeminiWithRetry = async (fn: () => Promise<any>, maxRetries = 5, initialDelay = 2000) => {
   let retries = 0;
   while (retries < maxRetries) {
     try {
@@ -127,14 +127,15 @@ const callGeminiWithRetry = async (fn: () => Promise<any>, maxRetries = 3, initi
     } catch (error: any) {
       const errorMsg = error.message || String(error);
       const errorStr = (errorMsg + (error.stack || '')).toLowerCase();
-      const isRateLimit = errorStr.includes('429') || 
-                          errorStr.includes('resource_exhausted') || 
-                          errorStr.includes('exceeded quota') ||
-                          errorStr.includes('quota exceeded');
-      
-      if (isRateLimit && retries < maxRetries - 1) {
+      // 認証・リクエスト不正エラーは即失敗（リトライ不要）
+      const isFatal = errorStr.includes('401') ||
+                      errorStr.includes('403') ||
+                      errorStr.includes('invalid api key') ||
+                      errorStr.includes('unauthorized') ||
+                      errorStr.includes('permission denied');
+      if (!isFatal && retries < maxRetries - 1) {
         const delay = initialDelay * Math.pow(2, retries);
-        console.warn(`Rate limit hit. Retrying in ${delay}ms... (Attempt ${retries + 1}/${maxRetries})`);
+        console.warn(`Gemini API error, retrying in ${delay}ms (${retries + 1}/${maxRetries}): ${errorMsg}`);
         await new Promise(resolve => setTimeout(resolve, delay));
         retries++;
       } else {
