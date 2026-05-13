@@ -1824,16 +1824,10 @@ ${rawText}`;
       return { success: false, error: 'Instagramには公開URLの画像が必要です。WordPressへのアップロードが失敗した可能性があります。' };
     }
 
-    const isScheduled = !!scheduledAt && new Date(scheduledAt).getTime() > Date.now() + 60000;
-    const scheduledUnix = isScheduled ? Math.floor(new Date(scheduledAt!).getTime() / 1000) : null;
-
     try {
       // 1. Create Media Container
+      // scheduled_publish_time はMeta特別許可アプリのみ → 常に即時投稿
       const containerBody: any = { image_url: imageUrl, caption: caption };
-      if (isScheduled && scheduledUnix) {
-        containerBody.published = false;
-        containerBody.scheduled_publish_time = scheduledUnix;
-      }
 
       const containerRes = await fetch(
         `https://graph.facebook.com/v19.0/${businessId}/media?access_token=${accessToken}`,
@@ -1861,11 +1855,7 @@ ${rawText}`;
         throw new Error('Media ID (creation_id) が取得できませんでした。Meta APIの応答を確認してください。');
       }
 
-      // 2. Publish Media (skip when scheduled — platform auto-publishes at scheduled_publish_time)
-      if (isScheduled) {
-        return { success: true, id: creationId, scheduled: true };
-      }
-
+      // 2. Publish Media
       // IMPORTANT: Instagram API needs time to process the image container before it can be published.
       let publishRes;
       let publishData;
