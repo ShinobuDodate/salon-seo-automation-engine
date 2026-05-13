@@ -2884,30 +2884,6 @@ ${rawText}`;
                       </div>
                     </div>
                     
-                    <div className="pt-2">
-                      <button
-                        onClick={generateBatchPosts}
-                        disabled={state.status === 'generating'}
-                        className={`w-full py-4 rounded-xl font-bold text-sm tracking-wide transition-all shadow-lg flex items-center justify-center space-x-2 ${
-                          state.status === 'generating'
-                            ? 'bg-black/10 text-black/40 cursor-not-allowed'
-                            : 'bg-gold text-black shadow-gold/20 hover:bg-gold/80 hover:scale-[1.01]'
-                        }`}
-                      >
-                        {state.status === 'generating' ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                        <span>{state.status === 'generating' ? '記事を生成中...' : 'AIで一括生成を開始'}</span>
-                      </button>
-                      <div className="flex justify-between items-center mt-2">
-                        <button
-                          onClick={() => generateEmptyBatchPosts()}
-                          disabled={state.status === 'generating'}
-                          className="px-3 py-1 bg-white border border-black/10 hover:border-gold/30 rounded-lg text-[10px] font-bold text-black/50 hover:text-gold transition-all flex items-center space-x-1"
-                        >
-                          <FileText size={10} />
-                          <span>空記事作成</span>
-                        </button>
-                      </div>
-                    </div>
                   </div>
 
                   <div className="pt-4 border-t border-black/5 space-y-4">
@@ -4306,20 +4282,16 @@ ${rawText}`;
                       )}
 
                       <button
-                        onClick={handleGenerateImages}
-                        disabled={isGeneratingImages || blogPosts.length === 0}
-                        className={`w-full py-3 rounded-xl text-[11px] font-bold uppercase tracking-widest border transition-all flex items-center justify-center space-x-2 ${
-                          isGeneratingImages || blogPosts.length === 0
-                            ? 'bg-black/5 border-black/10 text-black/30 cursor-not-allowed'
-                            : 'bg-purple-500/10 border-purple-500/30 text-purple-600 hover:bg-purple-500/20'
+                        onClick={generateBatchPosts}
+                        disabled={state.status === 'generating'}
+                        className={`w-full py-4 rounded-xl font-bold text-sm tracking-wide transition-all shadow-lg flex items-center justify-center space-x-2 ${
+                          state.status === 'generating'
+                            ? 'bg-black/10 text-black/40 cursor-not-allowed'
+                            : 'bg-gold text-black shadow-gold/20 hover:bg-gold/80 hover:scale-[1.01]'
                         }`}
                       >
-                        {isGeneratingImages ? (
-                          <Loader2 size={14} className="animate-spin" />
-                        ) : (
-                          <ImageIcon size={14} />
-                        )}
-                        <span>{isGeneratingImages ? `画像生成中...` : `画像生成を実行（${blogPosts.length}件）`}</span>
+                        {state.status === 'generating' ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                        <span>{state.status === 'generating' ? '記事を生成中...' : 'AIで一括生成を開始'}</span>
                       </button>
 
                       <p className="text-[9px] text-black/30 leading-tight bg-black/5 p-2 rounded border border-black/10">
