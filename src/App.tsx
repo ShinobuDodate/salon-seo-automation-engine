@@ -2040,8 +2040,17 @@ ${rawText}`;
       if (data.access_token) {
         // フォームのトークンも更新する
         setNewAccountData(prev => ({ ...prev, accessToken: data.access_token }));
-        setBlogSettings(prev => ({ ...prev, instagramAccessToken: data.access_token, instagramAppId: appId, instagramAppSecret: appSecret }));
-        setNotification({ message: 'トークンを60日間に延長しました！フォームのトークンも更新されました。', type: 'success' });
+        setBlogSettings(prev => ({
+          ...prev,
+          instagramAccessToken: data.access_token,
+          instagramAppId: appId,
+          instagramAppSecret: appSecret,
+          // 登録済みInstagramアカウントのトークンも一括更新
+          socialAccounts: prev.socialAccounts.map(acc =>
+            acc.platform === 'instagram' ? { ...acc, accessToken: data.access_token } : acc
+          )
+        }));
+        setNotification({ message: 'トークンを60日間に延長しました！登録済みアカウントも更新されました。', type: 'success' });
       }
     } catch (error: any) {
       console.error('Token Extension Error:', error);
@@ -2415,11 +2424,18 @@ ${rawText}`;
           let instaCaption = post.instaCaption || `${post.title}\n\n${post.metaDescription}`;
           instaCaption += getCommonText(blogSettings.selectedInstaBottomContentId);
 
-          instaResult = await postToInstagram(uploadedImageUrl, instaCaption, undefined, socialScheduledAt);
-
-          const otherInstaAccounts = blogSettings.socialAccounts.filter(a => a.platform === 'instagram');
-          for (const acc of otherInstaAccounts) {
-            await postToInstagram(uploadedImageUrl, instaCaption, acc, socialScheduledAt);
+          const instaAccounts = blogSettings.socialAccounts.filter(a => a.platform === 'instagram');
+          if (instaAccounts.length > 0) {
+            // registered accounts
+            for (const acc of instaAccounts) {
+              const r = await postToInstagram(uploadedImageUrl, instaCaption, acc, socialScheduledAt);
+              if (!instaResult) instaResult = r;
+            }
+          } else if (blogSettings.instagramBusinessId && blogSettings.instagramAccessToken) {
+            // legacy direct path
+            instaResult = await postToInstagram(uploadedImageUrl, instaCaption, undefined, socialScheduledAt);
+          } else {
+            instaResult = { success: false, error: 'Instagram設定が未完了です。「ソーシャルアカウント」でアカウントを登録してください。' };
           }
         }
 
