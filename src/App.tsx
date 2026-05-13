@@ -2201,10 +2201,75 @@ ${rawText}`;
       const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 seconds timeout
 
       try {
+        // ── 予約投稿: WP・Instagram・Threads 全てSupabaseに保存してサーバー任せ ──
+        if (!isImmediate) {
+          const wpSite = blogSettings.wpSites?.find((s: WpSite) => s.id === blogSettings.selectedWpSiteId);
+          const instaAcc = blogSettings.socialAccounts.find((a: SocialAccount) => a.platform === 'instagram');
+          const threadsAcc = blogSettings.socialAccounts.find((a: SocialAccount) => a.platform === 'threads');
+          const bottomContent = blogSettings.commonContents.find((c: CommonContent) => c.id === blogSettings.selectedBottomContentId);
+          const bottomHtml = bottomContent
+            ? (bottomContent.type === 'plain'
+                ? `<div style="margin:30px 0;padding:20px;background:#f9f9f9;border-radius:10px;border:1px solid #eee;text-align:center;color:#666;font-size:14px;line-height:1.8;">${bottomContent.content.replace(/\n/g, '<br>')}</div>`
+                : bottomContent.content)
+            : '';
+          const instaCaption = (() => {
+            let c = post.instaCaption || `${post.title}\n\n${post.metaDescription}`;
+            const ic = blogSettings.commonContents.find((cc: CommonContent) => cc.id === blogSettings.selectedInstaBottomContentId);
+            if (ic) c += '\n\n' + ic.content.replace(/<[^>]*>/g, '').trim();
+            return c;
+          })();
+
+          const payload = {
+            scheduled_at: post.scheduledAt,
+            title: post.title,
+            content: post.content,
+            meta_description: post.metaDescription,
+            image_url: (post.imageUrl && !post.imageUrl.startsWith('data:')) ? post.imageUrl : null,
+            image_base64: post.imageBase64 || null,
+            keywords: post.keywords || [],
+            insta_caption: instaCaption,
+            insta_hashtags: typeof post.instaHashtags === 'string' ? post.instaHashtags : (post.instaHashtags as string[] | undefined)?.join(' ') || null,
+            threads_caption: post.threadsCaption || null,
+            bottom_content_html: bottomHtml || null,
+            post_to_wp: hasWpDestination,
+            post_to_instagram: hasInstaDestination,
+            post_to_threads: hasThreadsDestination,
+            wp_url: wpSite?.url || blogSettings.targetUrl || null,
+            wp_username: wpSite?.username || blogSettings.username || null,
+            wp_app_password: wpSite?.appPassword || blogSettings.appPassword || null,
+            wp_news_slug: wpSite?.newsSlug || blogSettings.newsSlug || 'news',
+            wp_category_id: blogSettings.categoryId || null,
+            wp_destinations: blogSettings.destinations.filter((d: string) => ['blog', 'news'].includes(d)),
+            instagram_account_id: instaAcc?.pageId || blogSettings.instagramBusinessId || null,
+            instagram_access_token: instaAcc?.accessToken || blogSettings.instagramAccessToken || null,
+            threads_user_id: threadsAcc?.pageId || null,
+            threads_access_token: threadsAcc?.accessToken || null,
+            loop_enabled: false,
+            loop_interval_days: 0,
+          };
+
+          const res = await fetch('/api/schedule-post', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json();
+          if (data.error) throw new Error(data.error);
+
+          clearTimeout(timeoutId);
+          setCurrentlyPostingId(null);
+          if (!isBulk) setState({ status: 'idle' });
+          setBlogPosts(prev => prev.map(p => p.id === post.id ? {
+            ...p, isPosting: false, status: 'scheduled',
+            postingMessage: `予約完了（${new Date(post.scheduledAt).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}）`
+          } : p));
+          return true;
+        }
+
         let wpResult = null;
         let uploadedImageUrl = post.imageUrl;
         let featuredMediaId = 0;
-        
+
         if ((hasInstaDestination || hasThreadsDestination) && (!blogSettings.username || !blogSettings.appPassword || !blogSettings.targetUrl)) {
            throw new Error("Instagram/Threads投稿には画像を公開するためのサーバー(WordPress)が必要です。設定画面でWordPress情報を正しく入力してください。");
         }
@@ -2392,13 +2457,12 @@ ${rawText}`;
 
       clearTimeout(timeoutId);
 
-      // Social Media Posting
+      // Social Media Posting (即時投稿のみ。予約は上のSupabaseブロックで処理済み)
       let instaResult: any = null;
       let threadsResult: any = null;
-      const socialScheduledAt = !isImmediate ? post.scheduledAt : undefined;
 
       if (hasInstaDestination || hasThreadsDestination) {
-        if (hasInstaDestination && !uploadedImageUrl && isImmediate) {
+        if (hasInstaDestination && !uploadedImageUrl) {
           throw new Error("Instagramへの投稿には画像が必須です。画像を設定してください。");
         }
 
@@ -2408,85 +2472,35 @@ ${rawText}`;
           return '\n\n' + content.content.replace(/<[^>]*>/g, '').trim();
         };
 
-        // Instagram
+        // Instagram（即時）
         if (hasInstaDestination && uploadedImageUrl) {
-          setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, postingMessage: isImmediate ? 'Instagramに投稿中...' : 'Instagram予約設定中...' } : p));
+          setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, postingMessage: 'Instagramに投稿中...' } : p));
           let instaCaption = post.instaCaption || `${post.title}\n\n${post.metaDescription}`;
           instaCaption += getCommonText(blogSettings.selectedInstaBottomContentId);
 
-          if (!isImmediate) {
-            // 予約投稿: Supabaseに保存してサーバータイマーに任せる
-            const instaAcc = blogSettings.socialAccounts.find((a: SocialAccount) => a.platform === 'instagram');
-            const instaPayload = {
-              scheduled_at: post.scheduledAt,
-              title: post.title,
-              content: '',
-              meta_description: '',
-              image_url: uploadedImageUrl,
-              insta_caption: instaCaption,
-              insta_hashtags: typeof post.instaHashtags === 'string' ? post.instaHashtags : (post.instaHashtags as string[] | undefined)?.join(' ') || null,
-              post_to_wp: false,
-              post_to_instagram: true,
-              post_to_threads: false,
-              instagram_account_id: instaAcc?.pageId || blogSettings.instagramBusinessId || null,
-              instagram_access_token: instaAcc?.accessToken || blogSettings.instagramAccessToken || null,
-              loop_enabled: false,
-              loop_interval_days: 0,
-            };
-            const schedRes = await fetch('/api/schedule-post', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(instaPayload) });
-            const schedData = await schedRes.json();
-            instaResult = schedData.error ? { success: false, error: schedData.error } : { success: true, scheduled: true };
-          } else {
-            // 即時投稿: 直接API呼び出し
-            const instaAccounts = blogSettings.socialAccounts.filter((a: SocialAccount) => a.platform === 'instagram');
-            if (instaAccounts.length > 0) {
-              for (const acc of instaAccounts) {
-                const r = await postToInstagram(uploadedImageUrl, instaCaption, acc);
-                if (!instaResult) instaResult = r;
-              }
-            } else if (blogSettings.instagramBusinessId && blogSettings.instagramAccessToken) {
-              instaResult = await postToInstagram(uploadedImageUrl, instaCaption, undefined);
-            } else {
-              instaResult = { success: false, error: 'Instagram設定が未完了です。「ソーシャルアカウント」でアカウントを登録してください。' };
+          const instaAccounts = blogSettings.socialAccounts.filter((a: SocialAccount) => a.platform === 'instagram');
+          if (instaAccounts.length > 0) {
+            for (const acc of instaAccounts) {
+              const r = await postToInstagram(uploadedImageUrl, instaCaption, acc);
+              if (!instaResult) instaResult = r;
             }
+          } else if (blogSettings.instagramBusinessId && blogSettings.instagramAccessToken) {
+            instaResult = await postToInstagram(uploadedImageUrl, instaCaption, undefined);
+          } else {
+            instaResult = { success: false, error: 'Instagram設定が未完了です。「ソーシャルアカウント」でアカウントを登録してください。' };
           }
         }
 
-        // Threads
+        // Threads（即時）
         if (hasThreadsDestination) {
-          setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, postingMessage: isImmediate ? 'Threadsに投稿中...' : 'Threads予約設定中...' } : p));
+          setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, postingMessage: 'Threadsに投稿中...' } : p));
           let threadsCaption = post.threadsCaption || `${post.title}\n\n${post.metaDescription}`;
           threadsCaption += getCommonText(blogSettings.selectedThreadsBottomContentId);
 
-          if (!isImmediate) {
-            // 予約投稿: Supabaseに保存
-            const threadsAcc = blogSettings.socialAccounts.find((a: SocialAccount) => a.platform === 'threads');
-            if (threadsAcc) {
-              const threadsPayload = {
-                scheduled_at: post.scheduledAt,
-                title: post.title,
-                content: '',
-                meta_description: '',
-                image_url: uploadedImageUrl || null,
-                threads_caption: threadsCaption,
-                post_to_wp: false,
-                post_to_instagram: false,
-                post_to_threads: true,
-                threads_user_id: threadsAcc.pageId || null,
-                threads_access_token: threadsAcc.accessToken || null,
-                loop_enabled: false,
-                loop_interval_days: 0,
-              };
-              const schedRes = await fetch('/api/schedule-post', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(threadsPayload) });
-              const schedData = await schedRes.json();
-              threadsResult = schedData.error ? { success: false, error: schedData.error } : { success: true, scheduled: true };
-            }
-          } else {
-            // 即時投稿: 直接API呼び出し
-            const threadsAccounts = blogSettings.socialAccounts.filter((a: SocialAccount) => a.platform === 'threads');
-            for (const acc of threadsAccounts) {
-              threadsResult = await postToThreads(uploadedImageUrl, threadsCaption, acc);
-            }
+          const threadsAccounts = blogSettings.socialAccounts.filter((a: SocialAccount) => a.platform === 'threads');
+          for (const acc of threadsAccounts) {
+            threadsResult = await postToThreads(uploadedImageUrl, threadsCaption, acc);
+          }
           }
         }
       }
