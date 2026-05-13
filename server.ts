@@ -395,6 +395,18 @@ async function startServer() {
     }
   });
 
+  // --- Supabase: Stop loop for a post ---
+  app.post("/api/scheduled-post/:id/stop-loop", async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });
+    try {
+      const { error } = await supabase.from('scheduled_posts').update({ loop_enabled: false }).eq('id', req.params.id);
+      if (error) throw error;
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // --- Supabase: Delete scheduled post ---
   app.delete("/api/scheduled-post/:id", async (req, res) => {
     if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });

@@ -4794,6 +4794,20 @@ ${rawText}`;
                                 <span>今すぐ</span>
                               </button>
                             )}
+                            {sp.loop_enabled && (
+                              <button
+                                onClick={async () => {
+                                  await fetch(`/api/scheduled-post/${sp.id}/stop-loop`, { method: 'POST' });
+                                  setNotification({ message: 'ループを停止しました', type: 'success' });
+                                  fetchSupabasePosts();
+                                }}
+                                className="text-[10px] text-purple-500 hover:underline flex items-center space-x-0.5"
+                                title="ループを停止する"
+                              >
+                                <X size={9} />
+                                <span>ループ停止</span>
+                              </button>
+                            )}
                             <button
                               onClick={() => deleteSupabasePost(sp.id)}
                               className="p-1 text-black/20 hover:text-red-400 transition-colors"
