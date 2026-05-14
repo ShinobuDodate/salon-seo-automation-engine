@@ -400,6 +400,16 @@ async function startServer() {
     }
   });
 
+  // --- Instagram Story: immediate publish via server ---
+  app.post("/api/publish-story", async (req, res) => {
+    const { imageUrl, accountId, accessToken } = req.body;
+    if (!imageUrl || !accountId || !accessToken) {
+      return res.status(400).json({ success: false, error: 'imageUrl, accountId, accessToken are required' });
+    }
+    const result = await publishToInstagramStory(imageUrl, accountId, accessToken);
+    res.json(result);
+  });
+
   // --- Supabase: Save scheduled post ---
   app.post("/api/schedule-post", async (req, res) => {
     if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });

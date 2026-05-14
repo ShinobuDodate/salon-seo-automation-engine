@@ -1819,24 +1819,13 @@ ${rawText}`;
     if (!accessToken || !businessId) return { success: false, error: 'Instagram設定が未完了です。' };
     if (imageUrl.startsWith('data:')) return { success: false, error: 'ストーリーズには公開URLの画像が必要です。' };
     try {
-      const containerRes = await fetch(
-        `https://graph.facebook.com/v19.0/${businessId}/media?access_token=${accessToken}`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ media_type: 'STORIES', image_url: imageUrl }) }
-      );
-      const containerData = await containerRes.json();
-      if (containerData.error) throw new Error(`[Container] ${containerData.error.message}`);
-      const creationId = containerData.id;
-      if (!creationId) throw new Error('Creation ID が取得できませんでした。');
-      await new Promise(r => setTimeout(r, 4000));
-      const publishRes = await fetch(
-        `https://graph.facebook.com/v19.0/${businessId}/media_publish?access_token=${accessToken}`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ creation_id: creationId }) }
-      );
-      const publishData = await publishRes.json();
-      if (publishData.error) throw new Error(`[Publish] ${publishData.error.message}`);
-      return { success: true, id: publishData.id };
+      const res = await fetch('/api/publish-story', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl, accountId: businessId, accessToken })
+      });
+      const data = await res.json();
+      return data;
     } catch (e: any) {
       return { success: false, error: e.message };
     }
