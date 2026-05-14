@@ -410,6 +410,26 @@ async function startServer() {
     res.json(result);
   });
 
+  // --- Instagram Feed: immediate publish via server ---
+  app.post("/api/publish-instagram", async (req, res) => {
+    const { imageUrl, caption, accountId, accessToken } = req.body;
+    if (!imageUrl || !accountId || !accessToken) {
+      return res.status(400).json({ success: false, error: 'imageUrl, accountId, accessToken are required' });
+    }
+    const result = await publishToInstagram(imageUrl, caption || '', accountId, accessToken);
+    res.json(result);
+  });
+
+  // --- Threads: immediate publish via server ---
+  app.post("/api/publish-threads", async (req, res) => {
+    const { imageUrl, caption, userId, accessToken } = req.body;
+    if (!userId || !accessToken) {
+      return res.status(400).json({ success: false, error: 'userId, accessToken are required' });
+    }
+    const result = await publishToThreads(imageUrl || null, caption || '', userId, accessToken);
+    res.json(result);
+  });
+
   // --- Supabase: Save scheduled post ---
   app.post("/api/schedule-post", async (req, res) => {
     if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });

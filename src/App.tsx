@@ -1834,170 +1834,35 @@ ${rawText}`;
   const postToInstagram = async (imageUrl: string, caption: string, account?: SocialAccount) => {
     const accessToken = (account?.accessToken || blogSettings.instagramAccessToken || '').trim();
     const businessId = (account?.pageId || blogSettings.instagramBusinessId || '').trim();
-
-    if (!accessToken || !businessId) {
-      return { success: false, error: 'Instagram設定が未完了です。' };
-    }
-
-    if (imageUrl.startsWith('data:')) {
-      return { success: false, error: 'Instagramには公開URLの画像が必要です。WordPressへのアップロードが失敗した可能性があります。' };
-    }
-
+    if (!accessToken || !businessId) return { success: false, error: 'Instagram設定が未完了です。' };
+    if (imageUrl.startsWith('data:')) return { success: false, error: 'Instagramには公開URLの画像が必要です。WordPressへのアップロードが失敗した可能性があります。' };
     try {
-      // 1. Create Media Container
-      // scheduled_publish_time はMeta特別許可アプリのみ → 常に即時投稿
-      const containerBody: any = { image_url: imageUrl, caption: caption };
-
-      const containerRes = await fetch(
-        `https://graph.facebook.com/v19.0/${businessId}/media?access_token=${accessToken}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(containerBody)
-        }
-      );
-      
-      let containerData;
-      const containerText = await containerRes.text();
-      try {
-        containerData = JSON.parse(containerText);
-      } catch (e) {
-        throw new Error(`[Container] Invalid JSON response: ${containerText.substring(0, 100)}`);
-      }
-
-      if (containerData.error) {
-        throw new Error(`[Container] ${containerData.error.message} (Type: ${containerData.error.type})`);
-      }
-
-      const creationId = containerData.id;
-      if (!creationId) {
-        throw new Error('Media ID (creation_id) が取得できませんでした。Meta APIの応答を確認してください。');
-      }
-
-      // 2. Publish Media
-      // IMPORTANT: Instagram API needs time to process the image container before it can be published.
-      let publishRes;
-      let publishData;
-      let publishText;
-      let retries = 0;
-      const maxRetries = 5;
-      const delayMs = 3000;
-      let finalError = '';
-
-      while (retries < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, delayMs + (retries * 1000)));
-
-        publishRes = await fetch(
-          `https://graph.facebook.com/v19.0/${businessId}/media_publish?access_token=${accessToken}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ creation_id: creationId })
-          }
-        );
-
-        publishText = await publishRes.text();
-        try {
-          publishData = JSON.parse(publishText);
-        } catch (e) {
-          throw new Error(`[Publish] Invalid JSON response: ${publishText.substring(0, 100)}`);
-        }
-
-        if (!publishData.error) break;
-
-        finalError = `[Publish] ${publishData.error.message} (Type: ${publishData.error.type})`;
-        console.log(`Instagram publish attempt ${retries + 1} failed:`, publishData.error.message);
-        retries++;
-      }
-
-      if (publishData?.error) {
-        throw new Error(finalError);
-      }
-
-      return { success: true, id: publishData.id };
+      const res = await fetch('/api/publish-instagram', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl, caption, accountId: businessId, accessToken })
+      });
+      const data = await res.json();
+      return data;
     } catch (error: any) {
-      console.error('Instagram Post Error:', error);
       return { success: false, error: error.message };
     }
   };
 
   const postToThreads = async (imageUrl: string | undefined, caption: string, account: SocialAccount) => {
     const accessToken = (account.accessToken || '').trim();
-    const userId = (account.pageId || '').trim(); // Threads uses pageId field for userId in this app
-
-    if (!accessToken || !userId) {
-      return { success: false, error: 'Threads設定が未完了です。' };
-    }
-
-    if (imageUrl && imageUrl.startsWith('data:')) {
-      return { success: false, error: 'Threadsに画像付きで投稿するには公開URLが必要です。WordPressへのアップロードが失敗した可能性があります。' };
-    }
-
+    const userId = (account.pageId || '').trim();
+    if (!accessToken || !userId) return { success: false, error: 'Threads設定が未完了です。' };
+    if (imageUrl && imageUrl.startsWith('data:')) return { success: false, error: 'Threadsに画像付きで投稿するには公開URLが必要です。WordPressへのアップロードが失敗した可能性があります。' };
     try {
-      // 1. Create Threads Media Container
-      const bodyPayload: any = { text: caption };
-
-      if (imageUrl) {
-        bodyPayload.media_type = 'IMAGE';
-        bodyPayload.image_url = imageUrl;
-      } else {
-        bodyPayload.media_type = 'TEXT';
-      }
-
-      const containerRes = await fetch(
-        `https://graph.threads.net/v1.0/${userId}/threads?access_token=${accessToken}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(bodyPayload)
-        }
-      );
-      const containerData = await containerRes.json();
-      if (containerData.error) {
-        throw new Error(`[Container] ${containerData.error.message}`);
-      }
-
-      const creationId = containerData.id;
-      if (!creationId) {
-        throw new Error('Threads Creation ID が取得できませんでした。');
-      }
-
-      // 2. Publish Threads Media
-      let publishRes;
-      let publishData;
-      let retries = 0;
-      const maxRetries = 5;
-      const delayMs = 3000;
-      let finalError = '';
-
-      while (retries < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, delayMs + (retries * 1000)));
-
-        publishRes = await fetch(
-          `https://graph.threads.net/v1.0/${userId}/threads_publish?access_token=${accessToken}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ creation_id: creationId })
-          }
-        );
-
-        publishData = await publishRes.json();
-
-        if (!publishData.error) break;
-
-        finalError = `[Publish] ${publishData.error.message}`;
-        console.log(`Threads publish attempt ${retries + 1} failed:`, publishData.error.message);
-        retries++;
-      }
-
-      if (publishData?.error) {
-        throw new Error(finalError);
-      }
-
-      return { success: true, id: publishData.id };
+      const res = await fetch('/api/publish-threads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl, caption, userId, accessToken })
+      });
+      const data = await res.json();
+      return data;
     } catch (error: any) {
-      console.error('Threads Post Error:', error);
       return { success: false, error: error.message };
     }
   };
