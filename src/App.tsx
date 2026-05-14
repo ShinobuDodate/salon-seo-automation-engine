@@ -1449,7 +1449,7 @@ ${rawText}`;
         newPosts.push(emptyPost);
     }
     
-    setBlogPosts(prev => [...newPosts, ...prev]);
+    setBlogPosts(prev => [...newPosts, ...prev].slice(0, 100));
     setNotification({ message: `${articleCount}件の空のダミー記事（枠）を作成しました。`, type: 'success' });
   };
 
@@ -2281,7 +2281,7 @@ ${rawText}`;
           setCurrentlyPostingId(null);
           if (!isBulk) setState({ status: 'idle' });
           setBlogPosts(prev => prev.map(p => p.id === post.id ? {
-            ...p, isPosting: false, status: 'scheduled',
+            ...p, isPosting: false, status: 'scheduled', imageBase64: undefined,
             postingMessage: `予約完了（${new Date(post.scheduledAt).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}）`
           } : p));
           return true;
@@ -2583,10 +2583,11 @@ ${rawText}`;
           }
         }
 
-        return { 
-          ...p, 
-          status: isImmediate ? 'posted' : 'scheduled', 
+        return {
+          ...p,
+          status: isImmediate ? 'posted' : 'scheduled',
           isPosting: false,
+          imageBase64: undefined,
           wpId: wpResult?.id,
           wpStatus: wpResult?.status,
           wpLink: wpResult?.link,
@@ -2763,7 +2764,7 @@ ${rawText}`;
 
       setNotification({ message: `「${post.title}」をSupabaseに予約しました！${loopEnabled ? `（${formatLoopInterval(loopIntervalDays)}ごとにループ）` : ''}`, type: 'success' });
       setLoopModal({ post: null, loopEnabled: true, loopIntervalDays: 43200, loopTime: '', saving: false });
-      setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, status: 'scheduled' } : p));
+      setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, status: 'scheduled', imageBase64: undefined } : p));
       if (showSupabasePanel) fetchSupabasePosts();
     } catch (e: any) {
       setNotification({ message: `Supabase保存エラー: ${e.message}`, type: 'error' });
