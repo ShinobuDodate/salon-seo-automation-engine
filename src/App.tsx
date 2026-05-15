@@ -710,13 +710,12 @@ function AppContent() {
 
         const reader = new FileReader();
         reader.onloadend = async () => {
-          const base64 = (reader.result as string).split(',')[1];
           const mimeType = file.type || (file.name.endsWith('.pdf') ? 'application/pdf' : 'text/plain');
           try {
             const res = await fetch('/api/extract-file-context', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ data: base64, mimeType })
+              headers: { 'X-File-Type': mimeType },
+              body: reader.result as ArrayBuffer
             });
             const result = await res.json();
             if (result.error) throw new Error(result.error);
@@ -731,7 +730,7 @@ function AppContent() {
             setNotification({ message: `ファイル解析エラー: ${err.message}`, type: 'error' });
           }
         };
-        reader.readAsDataURL(file);
+        reader.readAsArrayBuffer(file);
       });
     }
   };

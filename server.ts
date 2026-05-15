@@ -400,13 +400,14 @@ async function startServer() {
     }
   });
 
-  // --- File context extraction (moves large base64 off client heap) ---
-  app.post("/api/extract-file-context", async (req, res) => {
-    const { data, mimeType } = req.body;
-    if (!data || !mimeType) return res.status(400).json({ error: 'data and mimeType are required' });
+  // --- File context extraction (raw binary to avoid base64 tripling on client) ---
+  app.post("/api/extract-file-context", express.raw({ type: '*/*', limit: '50mb' }), async (req, res) => {
+    const mimeType = (req.headers['x-file-type'] as string) || 'application/octet-stream';
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
+    if (!req.body || !req.body.length) return res.status(400).json({ error: 'file body is required' });
     try {
+      const data = (req.body as Buffer).toString('base64');
       const { GoogleGenAI } = await import('@google/genai');
       const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
