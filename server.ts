@@ -400,6 +400,29 @@ async function startServer() {
     }
   });
 
+  // --- File context extraction (moves large base64 off client heap) ---
+  app.post("/api/extract-file-context", async (req, res) => {
+    const { data, mimeType } = req.body;
+    if (!data || !mimeType) return res.status(400).json({ error: 'data and mimeType are required' });
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
+    try {
+      const { GoogleGenAI } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: { parts: [
+          { inlineData: { data, mimeType } },
+          { text: 'このファイルの内容を詳しく要約してください。重要な情報・数値・固有名詞をすべて含めてください。' }
+        ]}
+      });
+      const text = response.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || '';
+      res.json({ text });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // --- Instagram Story: immediate publish via server ---
   app.post("/api/publish-story", async (req, res) => {
     const { imageUrl, accountId, accessToken } = req.body;

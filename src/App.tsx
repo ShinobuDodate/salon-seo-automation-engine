@@ -428,7 +428,7 @@ function AppContent() {
       useGoogleSearch: true,
       postingInterval: 60, // Restored original posting interval setting
       enableGeoOptimization: false,
-      sourceFiles: [] as { name: string, data: string, mimeType: string }[],
+      sourceFiles: [] as { name: string, extractedText: string }[],
       customImagePrompt: "",
       uploadedImages: [] as string[], // array of base64
       imageMode: 'ai' as 'ai' | 'upload' | 'edit',
@@ -703,22 +703,33 @@ function AppContent() {
 
     if (files.length > 0) {
       files.forEach((file: File) => {
+        setBlogSettings(prev => {
+          if (prev.sourceFiles.some(f => f.name === file.name)) return prev;
+          return { ...prev, sourceFiles: [...prev.sourceFiles, { name: file.name, extractedText: '解析中...' }] };
+        });
+
         const reader = new FileReader();
-        reader.onloadend = () => {
+        reader.onloadend = async () => {
           const base64 = (reader.result as string).split(',')[1];
-          setBlogSettings(prev => {
-            // Prevent duplicates by name
-            if (prev.sourceFiles.some(f => f.name === file.name)) return prev;
-            
-            return { 
-              ...prev, 
-              sourceFiles: [...prev.sourceFiles, { 
-                name: file.name, 
-                data: base64, 
-                mimeType: file.type || (file.name.endsWith('.pdf') ? 'application/pdf' : 'text/plain')
-              }] 
-            };
-          });
+          const mimeType = file.type || (file.name.endsWith('.pdf') ? 'application/pdf' : 'text/plain');
+          try {
+            const res = await fetch('/api/extract-file-context', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ data: base64, mimeType })
+            });
+            const result = await res.json();
+            if (result.error) throw new Error(result.error);
+            setBlogSettings(prev => ({
+              ...prev,
+              sourceFiles: prev.sourceFiles.map(f =>
+                f.name === file.name ? { name: file.name, extractedText: result.text } : f
+              )
+            }));
+          } catch (err: any) {
+            setBlogSettings(prev => ({ ...prev, sourceFiles: prev.sourceFiles.filter(f => f.name !== file.name) }));
+            setNotification({ message: `ファイル解析エラー: ${err.message}`, type: 'error' });
+          }
         };
         reader.readAsDataURL(file);
       });
@@ -763,10 +774,14 @@ ${rawText}`;
     const keywordsString = keywordsArray.join(', ');
     
     if (!isBatchMode) {
-      setState({ 
-        status: 'generating', 
-        progressMessage: topic ? `記事「${topic}」を執筆中...` : 'SEOキーワードを分析し、記事を執筆中...' 
+      setState({
+        status: 'generating',
+        progressMessage: topic ? `記事「${topic}」を執筆中...` : 'SEOキーワードを分析し、記事を執筆中...'
       });
+      // 単発生成時も生成開始前にuploadedImagesをクリア（OOM防止）
+      if (blogSettings.uploadedImages.length > 0 && !customImage) {
+        setBlogSettings(prev => ({ ...prev, uploadedImages: [] }));
+      }
     }
 
     const overlayTextOnImage = (base64: string, text: string): Promise<{url: string, base64: string}> => {
@@ -874,24 +889,13 @@ ${rawText}`;
         tools.push({ googleSearch: {} });
       }
 
-      // ファイルがある場合は事前にテキスト抽出（inlineData+JSON+toolsの同時使用はGemini非対応のため）
+      // ファイルはアップロード時にサーバー側で抽出済み（extractedTextとして保存）
       let fileContext = '';
       if (blogSettings.sourceFiles.length > 0) {
-        try {
-          if (!isBatchMode) setState(prev => ({ ...prev, progressMessage: '資料ファイルを解析中...' }));
-          const extractAi = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-          const extractParts = blogSettings.sourceFiles.map(f => ({
-            inlineData: { data: f.data, mimeType: f.mimeType }
-          }));
-          if (!isBatchMode) setBlogSettings(prev => ({ ...prev, sourceFiles: [] }));
-          const extractResponse = await callGeminiWithRetry(() => extractAi.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: { parts: [...extractParts, { text: 'このファイルの内容を詳しく要約してください。重要な情報・数値・固有名詞をすべて含めてください。' }] }
-          }));
-          fileContext = extractResponse?.text || '';
-        } catch (e) {
-          console.error('File extraction error:', e);
-        }
+        fileContext = blogSettings.sourceFiles
+          .filter(f => f.extractedText && f.extractedText !== '解析中...')
+          .map(f => f.extractedText)
+          .join('\n\n---\n\n');
       }
 
       const contentPrompt = `あなたは美容サロン専門のSEOライターです。
@@ -1164,7 +1168,7 @@ ${rawText}`;
         instaHashtags: blogData.instaHashtags || '',
         threadsCaption: (blogData.threadsCaption || '').replace(/#\S*/g, '').replace(/\s{2,}/g, ' ').trim().substring(0, 280),
         imageUrl,
-        imageBase64,
+        imageBase64: '',
         jsonLd: blogData.jsonLd,
         keywords: keywordsArray,
         scheduledAt: customTime || new Date(Date.now() + 1000 * 60 * 60).toISOString(), 
@@ -1346,20 +1350,26 @@ ${rawText}`;
 
       let index = 0;
       const now = Date.now() + 1000 * 60 * 5;
-      
+
+      // 生成前にアップロード済み画像をローカルに取り出してstateをクリア（OOM防止）
+      const uploadedImagesCopy = [...blogSettings.uploadedImages];
+      if (uploadedImagesCopy.length > 0) {
+        setBlogSettings(prev => ({ ...prev, uploadedImages: [] }));
+      }
+
       for (const v of variations) {
         // Add a small delay between requests to avoid rate limits (429 errors)
         if (index > 0) {
-          setState(prev => ({ 
-            ...prev, 
-            progressMessage: `レートリミット回避のため待機中... (${index + 1}/${articleCount}記事目)` 
+          setState(prev => ({
+            ...prev,
+            progressMessage: `レートリミット回避のため待機中... (${index + 1}/${articleCount}記事目)`
           }));
           await new Promise(resolve => setTimeout(resolve, 3000)); // 3 seconds delay
         }
 
-        setState({ 
-          status: 'generating', 
-          progressMessage: `${articleCount}記事中 ${index + 1}記事目を生成中: ${v}` 
+        setState({
+          status: 'generating',
+          progressMessage: `${articleCount}記事中 ${index + 1}記事目を生成中: ${v}`
         });
 
         let delay = 0;
@@ -1368,12 +1378,12 @@ ${rawText}`;
           case '1hour': delay = 1000 * 60 * 60 * index; break;
           case '1day': delay = 1000 * 60 * 60 * 24 * index; break;
           case 'simultaneous': delay = 0; break;
-          case 'custom': delay = 1000 * 60 * 60 * index; break; 
+          case 'custom': delay = 1000 * 60 * 60 * index; break;
         }
-        
+
         const scheduledTime = new Date(now + delay).toISOString();
-        const customImage = blogSettings.uploadedImages.length > 0 
-          ? blogSettings.uploadedImages[index % blogSettings.uploadedImages.length] 
+        const customImage = uploadedImagesCopy.length > 0
+          ? uploadedImagesCopy[index % uploadedImagesCopy.length]
           : undefined;
         const newPost = await generateBlogPost(v, scheduledTime, true, customImage);
         if (variations.length === 1 && newPost) {
@@ -1662,7 +1672,7 @@ ${rawText}`;
         if (firstPart?.inlineData) {
           const imageBase64 = firstPart.inlineData.data;
           const imageUrl = `data:image/png;base64,${imageBase64}`;
-          setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, imageUrl, imageBase64 } : p));
+          setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, imageUrl, imageBase64: '' } : p));
           successCount++;
         }
       } catch (e) {
@@ -2102,7 +2112,7 @@ ${rawText}`;
             content: post.content,
             meta_description: post.metaDescription,
             image_url: (post.imageUrl && !post.imageUrl.startsWith('data:')) ? post.imageUrl : null,
-            image_base64: (post.imageUrl && !post.imageUrl.startsWith('data:')) ? null : (post.imageBase64 || null),
+            image_base64: (post.imageUrl && post.imageUrl.startsWith('data:')) ? post.imageUrl.split(',')[1] : null,
             keywords: post.keywords || [],
             insta_caption: instaCaption,
             insta_hashtags: typeof post.instaHashtags === 'string' ? post.instaHashtags : (post.instaHashtags as string[] | undefined)?.join(' ') || null,
@@ -2138,7 +2148,7 @@ ${rawText}`;
           setCurrentlyPostingId(null);
           if (!isBulk) setState({ status: 'idle' });
           setBlogPosts(prev => prev.map(p => p.id === post.id ? {
-            ...p, isPosting: false, status: 'scheduled', imageBase64: undefined,
+            ...p, isPosting: false, status: 'scheduled',
             postingMessage: `予約完了（${new Date(post.scheduledAt).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}）`
           } : p));
           return true;
@@ -2163,7 +2173,8 @@ ${rawText}`;
           let apiUrl = getWpApiUrl(baseUrl);
 
           // 1. Upload Image to Media Library
-          if (post.imageBase64) {
+          const imageBase64ForUpload = post.imageUrl?.startsWith('data:') ? post.imageUrl.split(',')[1] : null;
+          if (imageBase64ForUpload) {
             try {
               const { response: mediaResponse, apiBase: mediaApiBase } = await wpFetchAuto('/media', {
                 method: 'POST',
@@ -2172,7 +2183,7 @@ ${rawText}`;
                   'Content-Disposition': `attachment; filename="blog-image-${post.id}.png"`,
                   'Content-Type': 'image/png'
                 },
-                body: post.imageBase64,
+                body: imageBase64ForUpload,
                 isBase64: true,
                 signal: controller.signal
               });
@@ -2444,7 +2455,6 @@ ${rawText}`;
           ...p,
           status: isImmediate ? 'posted' : 'scheduled',
           isPosting: false,
-          imageBase64: undefined,
           wpId: wpResult?.id,
           wpStatus: wpResult?.status,
           wpLink: wpResult?.link,
@@ -2587,7 +2597,7 @@ ${rawText}`;
         content: post.content,
         meta_description: post.metaDescription,
         image_url: (post.imageUrl && !post.imageUrl.startsWith('data:')) ? post.imageUrl : null,
-        image_base64: (post.imageUrl && !post.imageUrl.startsWith('data:')) ? null : (post.imageBase64 || null),
+        image_base64: (post.imageUrl && post.imageUrl.startsWith('data:')) ? post.imageUrl.split(',')[1] : null,
         keywords: post.keywords || [],
         insta_caption: post.instaCaption || null,
         insta_hashtags: typeof post.instaHashtags === 'string' ? post.instaHashtags : (post.instaHashtags as string[] | undefined)?.join(' ') || null,
@@ -2621,7 +2631,7 @@ ${rawText}`;
 
       setNotification({ message: `「${post.title}」をSupabaseに予約しました！${loopEnabled ? `（${formatLoopInterval(loopIntervalDays)}ごとにループ）` : ''}`, type: 'success' });
       setLoopModal({ post: null, loopEnabled: true, loopIntervalDays: 43200, loopTime: '', saving: false });
-      setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, status: 'scheduled', imageBase64: undefined } : p));
+      setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, status: 'scheduled' } : p));
       if (showSupabasePanel) fetchSupabasePosts();
     } catch (e: any) {
       setNotification({ message: `Supabase保存エラー: ${e.message}`, type: 'error' });
@@ -3033,8 +3043,9 @@ ${rawText}`;
                               {blogSettings.sourceFiles.map((file, idx) => (
                                 <div key={idx} className="flex items-center justify-between bg-gold/10 border border-gold/20 rounded-lg px-3 py-1.5">
                                   <div className="flex items-center space-x-2 min-w-0">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-gold flex-shrink-0" />
+                                    <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${file.extractedText === '解析中...' ? 'bg-yellow-400 animate-pulse' : 'bg-gold'}`} />
                                     <span className="text-[10px] text-black/70 truncate">{file.name}</span>
+                                    {file.extractedText === '解析中...' && <span className="text-[9px] text-yellow-500 flex-shrink-0">解析中...</span>}
                                   </div>
                                   <button
                                     onClick={() => setBlogSettings(prev => ({ ...prev, sourceFiles: prev.sourceFiles.filter((_, i) => i !== idx) }))}
@@ -5001,10 +5012,10 @@ ${rawText}`;
                                 const reader = new FileReader();
                                 reader.onload = (ev) => {
                                   if (ev.target?.result) {
-                                    setEditingPost({ 
-                                      ...editingPost, 
+                                    setEditingPost({
+                                      ...editingPost,
                                       imageUrl: ev.target.result as string,
-                                      imageBase64: (ev.target.result as string).split(',')[1] || (ev.target.result as string)
+                                      imageBase64: ''
                                     });
                                   }
                                 };
