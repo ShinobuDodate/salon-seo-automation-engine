@@ -1176,6 +1176,7 @@ ${rawText}`;
       if (!isBatchMode) {
         setState({ status: 'completed', imageUrl });
         setEditingPost(newPost);
+        setBlogSettings(prev => ({ ...prev, sourceFiles: [] }));
       }
       return newPost;
     } catch (error: any) {
@@ -1386,6 +1387,7 @@ ${rawText}`;
       }
 
       setState({ status: 'completed' });
+      setBlogSettings(prev => ({ ...prev, sourceFiles: [] }));
     } catch (error: any) {
       console.error("Batch generation error:", error);
       const errorMsg = error.message || String(error);
@@ -2099,7 +2101,7 @@ ${rawText}`;
             content: post.content,
             meta_description: post.metaDescription,
             image_url: (post.imageUrl && !post.imageUrl.startsWith('data:')) ? post.imageUrl : null,
-            image_base64: post.imageBase64 || null,
+            image_base64: (post.imageUrl && !post.imageUrl.startsWith('data:')) ? null : (post.imageBase64 || null),
             keywords: post.keywords || [],
             insta_caption: instaCaption,
             insta_hashtags: typeof post.instaHashtags === 'string' ? post.instaHashtags : (post.instaHashtags as string[] | undefined)?.join(' ') || null,
@@ -2584,7 +2586,7 @@ ${rawText}`;
         content: post.content,
         meta_description: post.metaDescription,
         image_url: (post.imageUrl && !post.imageUrl.startsWith('data:')) ? post.imageUrl : null,
-        image_base64: post.imageBase64 || null,
+        image_base64: (post.imageUrl && !post.imageUrl.startsWith('data:')) ? null : (post.imageBase64 || null),
         keywords: post.keywords || [],
         insta_caption: post.instaCaption || null,
         insta_hashtags: typeof post.instaHashtags === 'string' ? post.instaHashtags : (post.instaHashtags as string[] | undefined)?.join(' ') || null,
