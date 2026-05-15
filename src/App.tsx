@@ -883,6 +883,7 @@ ${rawText}`;
           const extractParts = blogSettings.sourceFiles.map(f => ({
             inlineData: { data: f.data, mimeType: f.mimeType }
           }));
+          if (!isBatchMode) setBlogSettings(prev => ({ ...prev, sourceFiles: [] }));
           const extractResponse = await callGeminiWithRetry(() => extractAi.models.generateContent({
             model: 'gemini-3-flash-preview',
             contents: { parts: [...extractParts, { text: 'このファイルの内容を詳しく要約してください。重要な情報・数値・固有名詞をすべて含めてください。' }] }
