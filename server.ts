@@ -520,6 +520,44 @@ async function startServer() {
     }
   });
 
+  // --- Server-side image generation (keeps Gemini call off browser heap) ---
+  app.post("/api/generate-image", async (req, res) => {
+    const { prompt, imageMode, referenceImageBase64, mimeType } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
+    try {
+      const { GoogleGenAI } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey });
+      const config = { imageConfig: { aspectRatio: "16:9" } };
+      let response;
+      if (imageMode === 'edit' && referenceImageBase64) {
+        response = await ai.models.generateContent({
+          model: 'gemini-2.5-flash-image',
+          contents: { parts: [
+            { inlineData: { data: referenceImageBase64, mimeType: mimeType || 'image/png' } },
+            { text: prompt }
+          ]},
+          config
+        });
+      } else {
+        response = await ai.models.generateContent({
+          model: 'gemini-2.5-flash-image',
+          contents: prompt,
+          config
+        });
+      }
+      const firstPart = response.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
+      if (firstPart?.inlineData) {
+        res.json({ imageBase64: firstPart.inlineData.data, imageMimeType: firstPart.inlineData.mimeType || 'image/png' });
+      } else {
+        res.status(500).json({ error: 'Geminiから画像が返されませんでした' });
+      }
+    } catch (e: any) {
+      console.error('[generate-image] Error:', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

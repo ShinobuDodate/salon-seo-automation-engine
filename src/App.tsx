@@ -1088,25 +1088,19 @@ ${rawText}`;
             ? `${blogSettings.customImagePrompt}. Keywords: ${keywordsString}. STRICT RULE: DO NOT include any text, letters, or characters in the image.`
             : `${selectedImageStyle} Professional photography, 4k. STRICT RULE: DO NOT include any text, letters, or characters in the image. Keywords: ${keywordsString}`;
           
-          const imageResponse = await callGeminiWithRetry(() => ai.models.generateContent({
-            model: 'gemini-2.5-flash-image',
-            contents: {
-              parts: [
-                {
-                  inlineData: {
-                    data: selectedImage.split(',')[1] || selectedImage,
-                    mimeType: 'image/png'
-                  }
-                },
-                { text: imagePrompt }
-              ]
-            },
-            config: { imageConfig: { aspectRatio: "16:9" } }
-          }));
-
-          const firstPart = imageResponse.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-          if (firstPart?.inlineData) {
-            imageBase64 = firstPart.inlineData.data;
+          const imgRes = await fetch('/api/generate-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              prompt: imagePrompt,
+              imageMode: 'edit',
+              referenceImageBase64: selectedImage.split(',')[1] || selectedImage,
+              mimeType: 'image/png'
+            })
+          });
+          const imgData = await imgRes.json();
+          if (imgData.imageBase64) {
+            imageBase64 = imgData.imageBase64;
             if (blogSettings.bannerText) {
               const overlaid = await overlayTextOnImage(imageBase64, blogSettings.bannerText);
               imageUrl = overlaid.url;
@@ -1133,15 +1127,14 @@ ${rawText}`;
             ? `${blogSettings.customImagePrompt}. Keywords: ${keywordsString}. STRICT RULE: DO NOT include any text, letters, or characters in the image.`
             : `${selectedImageStyle} This image is for a Japanese beauty salon blog article. Title: "${articleTitle}". Summary: "${articleSummary}". The image must visually represent the article content. Professional photography, 4k. STRICT RULE: DO NOT include any text, letters, or characters in the image. No text, no letters, no characters, no writing. Keywords: ${keywordsString}`;
           
-          const imageResponse = await callGeminiWithRetry(() => ai.models.generateContent({
-            model: 'gemini-2.5-flash-image',
-            contents: imagePrompt,
-            config: { imageConfig: { aspectRatio: "16:9" } }
-          }));
-
-          const firstPart = imageResponse.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-          if (firstPart?.inlineData) {
-            imageBase64 = firstPart.inlineData.data;
+          const imgRes = await fetch('/api/generate-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: imagePrompt, imageMode: 'ai' })
+          });
+          const imgData = await imgRes.json();
+          if (imgData.imageBase64) {
+            imageBase64 = imgData.imageBase64;
             if (blogSettings.bannerText) {
               const overlaid = await overlayTextOnImage(imageBase64, blogSettings.bannerText);
               imageUrl = overlaid.url;
@@ -1648,7 +1641,6 @@ ${rawText}`;
       return;
     }
     setIsGeneratingImages(true);
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const imageStyles = [
       'A luxurious and calming beauty salon atmosphere, soft lighting, premium aesthetic.',
       'A modern and stylish salon interior, minimalist design, elegant decor.',
@@ -1663,15 +1655,14 @@ ${rawText}`;
         const imagePrompt = blogSettings.customImagePrompt
           ? `${blogSettings.customImagePrompt}. Keywords: ${keywordsString}. STRICT RULE: DO NOT include any text, letters, or characters in the image.`
           : `${selectedImageStyle} This image is for a Japanese beauty salon blog article. Title: "${post.title}". Summary: "${post.metaDescription || ''}". Professional photography, 4k. STRICT RULE: DO NOT include any text, letters, or characters in the image. Keywords: ${keywordsString}`;
-        const imageResponse = await callGeminiWithRetry(() => ai.models.generateContent({
-          model: 'gemini-2.5-flash-image',
-          contents: imagePrompt,
-          config: { imageConfig: { aspectRatio: "16:9" } }
-        }));
-        const firstPart = imageResponse.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
-        if (firstPart?.inlineData) {
-          const imageBase64 = firstPart.inlineData.data;
-          const imageUrl = `data:image/png;base64,${imageBase64}`;
+        const imgRes = await fetch('/api/generate-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: imagePrompt, imageMode: 'ai' })
+        });
+        const imgData = await imgRes.json();
+        if (imgData.imageBase64) {
+          const imageUrl = `data:image/png;base64,${imgData.imageBase64}`;
           setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, imageUrl, imageBase64: '' } : p));
           successCount++;
         }
