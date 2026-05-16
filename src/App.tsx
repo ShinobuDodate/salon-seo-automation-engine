@@ -361,43 +361,29 @@ function AppContent() {
     return [];
   });
 
-  // Auto-save posts to localStorage with quota management
+  // Auto-save posts to localStorage (always strip data URI images to avoid blocking main thread)
   useEffect(() => {
-    const preparePostsForStorage = (posts: BlogPost[], includeImages: boolean, limit: number) => {
+    const preparePostsForStorage = (posts: BlogPost[], limit: number) => {
       return posts.slice(0, limit).map(p => {
         const post = { ...p };
-        if (!includeImages) {
-          post.imageBase64 = undefined;
-          // If imageUrl is a data URI (base64), remove it too
-          if (post.imageUrl?.startsWith('data:')) {
-            post.imageUrl = undefined;
-          }
+        post.imageBase64 = undefined;
+        if (post.imageUrl?.startsWith('data:')) {
+          post.imageUrl = undefined;
         }
         return post;
       });
     };
 
     try {
-      // Try saving the most recent 10 posts with images first (might still fail if images are large)
-      const postsWithImages = preparePostsForStorage(blogPosts, true, 10);
-      localStorage.setItem('blog_posts_history', JSON.stringify(postsWithImages));
+      const postsToSave = preparePostsForStorage(blogPosts, 50);
+      localStorage.setItem('blog_posts_history', JSON.stringify(postsToSave));
     } catch (e) {
-      console.warn("Failed to save blog posts with images to localStorage (Quota exceeded). Trying without images...", e);
+      console.warn("Failed to save blog posts to localStorage. Trying minimal set...", e);
       try {
-        // If that fails, save more posts (up to 50) but WITHOUT large image data
-        const postsWithoutImages = preparePostsForStorage(blogPosts, false, 50);
-        localStorage.setItem('blog_posts_history', JSON.stringify(postsWithoutImages));
-      } catch (innerError) {
-        console.warn("Failed to save blog posts even without images. Trying minimal set...", innerError);
-        try {
-          // Absolute fallback: only save the most recent 5 posts without images
-          const minimalPosts = preparePostsForStorage(blogPosts, false, 5);
-          localStorage.setItem('blog_posts_history', JSON.stringify(minimalPosts));
-        } catch (criticalError) {
-          console.error("Critical failure saving to localStorage. Clearing history to recover.", criticalError);
-          // If everything fails, we might need to clear it to avoid constant errors
-          // But let's not clear it automatically, just log it.
-        }
+        const minimalPosts = preparePostsForStorage(blogPosts, 5);
+        localStorage.setItem('blog_posts_history', JSON.stringify(minimalPosts));
+      } catch (criticalError) {
+        console.error("Critical failure saving to localStorage.", criticalError);
       }
     }
   }, [blogPosts]);
