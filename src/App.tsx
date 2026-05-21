@@ -353,7 +353,13 @@ function AppContent() {
     const saved = localStorage.getItem('blog_posts_history');
     if (saved) {
       try {
-        return safeParseJson(saved, []);
+        const posts = safeParseJson(saved, []);
+        // 起動時に古いdata URI画像を除去（旧バージョンのデータが残っている場合のOOM対策）
+        return posts.map((p: BlogPost) => ({
+          ...p,
+          imageBase64: undefined,
+          imageUrl: p.imageUrl?.startsWith('data:') ? undefined : p.imageUrl,
+        }));
       } catch (e) {
         return [];
       }
