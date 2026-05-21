@@ -315,7 +315,7 @@ async function callGeminiREST(model: string, contents: any[], generationConfig?:
     const ctrl = new AbortController();
     setTimeout(() => ctrl.abort(), 1500);
     const r = await fetch(
-      'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token?scopes=https://www.googleapis.com/auth/cloud-platform',
+      'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',
       { headers: { 'Metadata-Flavor': 'Google' }, signal: ctrl.signal }
     );
     if (r.ok) { const { access_token } = await r.json(); authHeader = `Bearer ${access_token}`; }
@@ -343,6 +343,39 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json({ limit: '50mb' }));
+
+  // 認証デバッグ用エンドポイント（本番でも一時的に有効化）
+  app.get('/api/debug-auth', async (_req, res) => {
+    const result: any = { env: {} };
+    result.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.substring(0, 12) + '...' : 'NOT SET';
+    result.env.K_SERVICE = process.env.K_SERVICE || 'NOT SET';
+    result.env.GOOGLE_CLOUD_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || 'NOT SET';
+    try {
+      // スコープ一覧を取得
+      const scopesRes = await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/scopes', { headers: { 'Metadata-Flavor': 'Google' } });
+      result.adcScopes = scopesRes.ok ? await scopesRes.text() : `FAILED: ${scopesRes.status}`;
+      // トークン取得
+      const tokenRes = await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token', { headers: { 'Metadata-Flavor': 'Google' } });
+      if (tokenRes.ok) {
+        const { access_token } = await tokenRes.json();
+        result.tokenObtained = true;
+        // Gemini呼び出しテスト
+        const geminiRes = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${access_token}` },
+          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] })
+        });
+        result.geminiStatus = geminiRes.status;
+        result.geminiResponse = await geminiRes.json();
+      } else {
+        result.tokenObtained = false;
+        result.tokenError = `${tokenRes.status}`;
+      }
+    } catch (e: any) {
+      result.error = e.message;
+    }
+    res.json(result);
+  });
   app.use((err: any, req: any, res: any, next: any) => {
     if (err) {
       console.error("Express middleware error:", err);
