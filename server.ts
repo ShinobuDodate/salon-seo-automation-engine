@@ -315,7 +315,7 @@ async function callGeminiREST(model: string, contents: any[], generationConfig?:
     const ctrl = new AbortController();
     setTimeout(() => ctrl.abort(), 1500);
     const r = await fetch(
-      'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',
+      'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token?scopes=https://www.googleapis.com/auth/cloud-platform',
       { headers: { 'Metadata-Flavor': 'Google' }, signal: ctrl.signal }
     );
     if (r.ok) { const { access_token } = await r.json(); authHeader = `Bearer ${access_token}`; }
