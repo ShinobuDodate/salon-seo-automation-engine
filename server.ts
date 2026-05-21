@@ -401,21 +401,28 @@ async function startServer() {
   });
 
   // --- File context extraction (raw binary to avoid base64 tripling on client) ---
-  app.post("/api/extract-file-context", express.raw({ type: '*/*', limit: '50mb' }), async (req, res) => {
+  app.post("/api/extract-file-context", express.raw({ type: '*/*', limit: '80mb' }), async (req, res) => {
     const mimeType = (req.headers['x-file-type'] as string) || 'application/octet-stream';
+    if (!req.body || !req.body.length) return res.status(400).json({ error: 'file body is required' });
+
+    // TXTファイルはGemini不要 — バッファをそのままUTF-8テキストとして返す
+    if (mimeType === 'text/plain' || mimeType.startsWith('text/')) {
+      const text = (req.body as Buffer).toString('utf-8');
+      return res.json({ text });
+    }
+
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
-    if (!req.body || !req.body.length) return res.status(400).json({ error: 'file body is required' });
     try {
       const data = (req.body as Buffer).toString('base64');
       const { GoogleGenAI } = await import('@google/genai');
       const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: { parts: [
+        model: 'gemini-2.0-flash',
+        contents: [{ role: 'user', parts: [
           { inlineData: { data, mimeType } },
           { text: 'このファイルの内容を詳しく要約してください。重要な情報・数値・固有名詞をすべて含めてください。' }
-        ]}
+        ]}]
       });
       const text = response.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || '';
       res.json({ text });
