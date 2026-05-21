@@ -308,74 +308,12 @@ function startPublishTimer() {
   }, 60000);
 }
 
-// Cloud RunではADCトークンを使いAPIキー不要で呼び出す。ローカルはAPIキーにフォールバック。
-async function callGeminiREST(model: string, contents: any[], generationConfig?: any, tools?: any[]): Promise<any> {
-  let authHeader: string | null = null;
-  try {
-    const ctrl = new AbortController();
-    setTimeout(() => ctrl.abort(), 1500);
-    const r = await fetch(
-      'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',
-      { headers: { 'Metadata-Flavor': 'Google' }, signal: ctrl.signal }
-    );
-    if (r.ok) { const { access_token } = await r.json(); authHeader = `Bearer ${access_token}`; }
-  } catch { /* ローカル環境 */ }
-
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!authHeader && !apiKey) throw new Error('GEMINI_API_KEY not configured');
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent${authHeader ? '' : `?key=${apiKey}`}`;
-  const body: any = { contents };
-  if (generationConfig) body.generationConfig = generationConfig;
-  if (tools && tools.length > 0) body.tools = tools;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(authHeader ? { Authorization: authHeader } : {}) },
-    body: JSON.stringify(body)
-  });
-  const result = await res.json();
-  if (result.error) throw new Error(JSON.stringify(result.error));
-  return result;
-}
-
 // --- Express server ---
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   app.use(express.json({ limit: '50mb' }));
-
-  // 認証デバッグ用エンドポイント（本番でも一時的に有効化）
-  app.get('/api/debug-auth', async (_req, res) => {
-    const result: any = { env: {} };
-    result.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.substring(0, 12) + '...' : 'NOT SET';
-    result.env.K_SERVICE = process.env.K_SERVICE || 'NOT SET';
-    result.env.GOOGLE_CLOUD_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || 'NOT SET';
-    try {
-      // スコープ一覧を取得
-      const scopesRes = await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/scopes', { headers: { 'Metadata-Flavor': 'Google' } });
-      result.adcScopes = scopesRes.ok ? await scopesRes.text() : `FAILED: ${scopesRes.status}`;
-      // トークン取得
-      const tokenRes = await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token', { headers: { 'Metadata-Flavor': 'Google' } });
-      if (tokenRes.ok) {
-        const { access_token } = await tokenRes.json();
-        result.tokenObtained = true;
-        // Gemini呼び出しテスト
-        const geminiRes = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${access_token}` },
-          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] })
-        });
-        result.geminiStatus = geminiRes.status;
-        result.geminiResponse = await geminiRes.json();
-      } else {
-        result.tokenObtained = false;
-        result.tokenError = `${tokenRes.status}`;
-      }
-    } catch (e: any) {
-      result.error = e.message;
-    }
-    res.json(result);
-  });
   app.use((err: any, req: any, res: any, next: any) => {
     if (err) {
       console.error("Express middleware error:", err);
@@ -463,25 +401,23 @@ async function startServer() {
   });
 
   // --- File context extraction (raw binary to avoid base64 tripling on client) ---
-  app.post("/api/extract-file-context", express.raw({ type: '*/*', limit: '80mb' }), async (req, res) => {
+  app.post("/api/extract-file-context", express.raw({ type: '*/*', limit: '50mb' }), async (req, res) => {
     const mimeType = (req.headers['x-file-type'] as string) || 'application/octet-stream';
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
     if (!req.body || !req.body.length) return res.status(400).json({ error: 'file body is required' });
-
-    // TXTファイルはGemini不要 — バッファをそのままUTF-8テキストとして返す
-    if (mimeType === 'text/plain' || mimeType.startsWith('text/')) {
-      const text = (req.body as Buffer).toString('utf-8');
-      return res.json({ text });
-    }
-
     try {
       const data = (req.body as Buffer).toString('base64');
-      const result = await callGeminiREST('gemini-3-flash-preview', [
-        { role: 'user', parts: [
+      const { GoogleGenAI } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: { parts: [
           { inlineData: { data, mimeType } },
           { text: 'このファイルの内容を詳しく要約してください。重要な情報・数値・固有名詞をすべて含めてください。' }
         ]}
-      ]);
-      const text = result.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || '';
+      });
+      const text = response.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || '';
       res.json({ text });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -588,21 +524,30 @@ async function startServer() {
   // --- Server-side image generation (keeps Gemini call off browser heap) ---
   app.post("/api/generate-image", async (req, res) => {
     const { prompt, imageMode, referenceImageBase64, mimeType } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
     try {
-      let contents;
+      const { GoogleGenAI } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey });
+      const config = { imageConfig: { aspectRatio: "16:9" } };
+      let response;
       if (imageMode === 'edit' && referenceImageBase64) {
-        contents = [{ role: 'user', parts: [
-          { inlineData: { data: referenceImageBase64, mimeType: mimeType || 'image/png' } },
-          { text: prompt }
-        ]}];
+        response = await ai.models.generateContent({
+          model: 'gemini-2.5-flash-image',
+          contents: { parts: [
+            { inlineData: { data: referenceImageBase64, mimeType: mimeType || 'image/png' } },
+            { text: prompt }
+          ]},
+          config
+        });
       } else {
-        contents = [{ role: 'user', parts: [{ text: prompt }] }];
+        response = await ai.models.generateContent({
+          model: 'gemini-2.5-flash-image',
+          contents: prompt,
+          config
+        });
       }
-      const result = await callGeminiREST('gemini-2.5-flash-image', contents, {
-        responseModalities: ['Text', 'Image'],
-        imageConfig: { aspectRatio: '16:9' }
-      });
-      const firstPart = result.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
+      const firstPart = response.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
       if (firstPart?.inlineData) {
         res.json({ imageBase64: firstPart.inlineData.data, imageMimeType: firstPart.inlineData.mimeType || 'image/png' });
       } else {
@@ -617,50 +562,58 @@ async function startServer() {
   // --- Server-side article text generation (keeps large prompt + Gemini SDK off browser heap) ---
   app.post("/api/generate-article", async (req, res) => {
     const { prompt, modelName, tools } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
     if (!prompt) return res.status(400).json({ error: 'prompt is required' });
 
-    const schema = {
-      type: "OBJECT",
-      properties: {
-        title: { type: "STRING" },
-        content: { type: "STRING" },
-        plainContent: { type: "STRING" },
-        metaDescription: { type: "STRING" },
-        instaCaption: { type: "STRING" },
-        instaHashtags: { type: "STRING" },
-        threadsCaption: { type: "STRING" },
-        jsonLd: { type: "STRING" }
-      },
-      required: ["title", "content", "plainContent", "metaDescription", "instaCaption", "instaHashtags", "threadsCaption"]
-    };
-
-    const genConfig = {
-      responseMimeType: "application/json",
-      responseSchema: schema,
-      maxOutputTokens: 8192,
-      thinkingConfig: { thinkingBudget: 0 }
-    };
-
-    const callWithRetry = async (fn: () => Promise<any>, maxRetries = 5, initialDelay = 2000): Promise<any> => {
-      let retries = 0;
-      while (retries < maxRetries) {
-        try { return await fn(); } catch (error: any) {
-          const errorStr = ((error.message || '') + (error.stack || '')).toLowerCase();
-          const isFatal = errorStr.includes('401') || errorStr.includes('403') ||
-                          errorStr.includes('invalid api key') || errorStr.includes('unauthorized') ||
-                          errorStr.includes('permission denied');
-          if (!isFatal && retries < maxRetries - 1) {
-            await new Promise(r => setTimeout(r, initialDelay * Math.pow(2, retries)));
-            retries++;
-          } else throw error;
-        }
-      }
-    };
-
     try {
-      const contents = [{ role: 'user', parts: [{ text: prompt }] }];
-      const response = await callWithRetry(() => callGeminiREST(modelName, contents, genConfig, tools));
-      let text = response?.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || '';
+      const { GoogleGenAI, Type, ThinkingLevel } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey });
+
+      const callWithRetry = async (fn: () => Promise<any>, maxRetries = 5, initialDelay = 2000): Promise<any> => {
+        let retries = 0;
+        while (retries < maxRetries) {
+          try { return await fn(); } catch (error: any) {
+            const errorStr = ((error.message || '') + (error.stack || '')).toLowerCase();
+            const isFatal = errorStr.includes('401') || errorStr.includes('403') ||
+                            errorStr.includes('invalid api key') || errorStr.includes('unauthorized') ||
+                            errorStr.includes('permission denied');
+            if (!isFatal && retries < maxRetries - 1) {
+              await new Promise(r => setTimeout(r, initialDelay * Math.pow(2, retries)));
+              retries++;
+            } else throw error;
+          }
+        }
+      };
+
+      const schema = {
+        type: Type.OBJECT,
+        properties: {
+          title: { type: Type.STRING },
+          content: { type: Type.STRING },
+          plainContent: { type: Type.STRING },
+          metaDescription: { type: Type.STRING },
+          instaCaption: { type: Type.STRING },
+          instaHashtags: { type: Type.STRING },
+          threadsCaption: { type: Type.STRING },
+          jsonLd: { type: Type.STRING }
+        },
+        required: ["title", "content", "plainContent", "metaDescription", "instaCaption", "instaHashtags", "threadsCaption"]
+      };
+
+      const response = await callWithRetry(() => ai.models.generateContent({
+        model: modelName,
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: schema,
+          maxOutputTokens: 8192,
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          tools: tools && tools.length > 0 ? tools : undefined
+        }
+      }));
+
+      let text = response?.text || '';
 
       // Repair step: if response is clearly incomplete, re-ask Gemini on the server
       let needsRepair = false;
@@ -673,10 +626,12 @@ async function startServer() {
         console.log('[generate-article] Response incomplete, attempting repair...');
         const repairPrompt = `あなたは高度なJSONデータ修復専門のAIです。\n以下のテキストは、ブログ記事生成AIが出力した「不完全」または「壊れた」JSONデータです。\n内容（記事本文やタイトルなど）を一切損なうことなく、不足している閉じ括弧、引用符、カンマなどを補完し、指定されたスキーマに完全に準拠した有効なJSON形式に修正してください。\n出力はJSONのみとしてください。\n\n【壊れたテキスト】\n${text}`;
         try {
-          const repairContents = [{ role: 'user', parts: [{ text: repairPrompt }] }];
-          const repairRes = await callWithRetry(() => callGeminiREST(modelName, repairContents, { responseMimeType: "application/json", responseSchema: schema, thinkingConfig: { thinkingBudget: 0 } }));
-          const repaired = repairRes?.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text;
-          if (repaired) text = repaired;
+          const repairRes = await callWithRetry(() => ai.models.generateContent({
+            model: modelName,
+            contents: repairPrompt,
+            config: { responseMimeType: "application/json", responseSchema: schema, thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+          }));
+          if (repairRes?.text) text = repairRes.text;
         } catch (repairErr: any) {
           console.error('[generate-article] Repair failed:', repairErr.message);
         }

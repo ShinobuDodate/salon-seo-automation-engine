@@ -695,10 +695,6 @@ function AppContent() {
 
     if (files.length > 0) {
       files.forEach((file: File) => {
-        if (file.size > 80 * 1024 * 1024) {
-          setNotification({ message: `⚠️ ${file.name} は80MBを超えています。クラッシュを防ぐため、80MB以内のファイルをご使用ください。`, type: 'error' });
-          return;
-        }
         setBlogSettings(prev => {
           if (prev.sourceFiles.some(f => f.name === file.name)) return prev;
           return { ...prev, sourceFiles: [...prev.sourceFiles, { name: file.name, extractedText: '解析中...' }] };
@@ -710,7 +706,7 @@ function AppContent() {
           try {
             const res = await fetch('/api/extract-file-context', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/octet-stream', 'X-File-Type': mimeType },
+              headers: { 'X-File-Type': mimeType },
               body: reader.result as ArrayBuffer
             });
             const result = await res.json();
@@ -2955,10 +2951,6 @@ ${rawText}`;
                             )}
                           </div>
                           
-                          <div className="flex items-center space-x-1 bg-red-50 border border-red-200 rounded-lg px-3 py-1.5">
-                            <span className="text-[11px] text-red-600 font-bold">⚠️ 1ファイル80MB以内（超えるとクラッシュします）</span>
-                          </div>
-
                           <div
                             onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
                             onDrop={(e) => { e.preventDefault(); e.stopPropagation(); handleFileUpload(e as any); }}
