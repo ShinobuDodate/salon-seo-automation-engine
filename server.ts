@@ -418,11 +418,11 @@ async function startServer() {
       const { GoogleGenAI } = await import('@google/genai');
       const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
-        contents: [{ role: 'user', parts: [
+        model: 'gemini-3-flash-preview',
+        contents: { parts: [
           { inlineData: { data, mimeType } },
           { text: 'このファイルの内容を詳しく要約してください。重要な情報・数値・固有名詞をすべて含めてください。' }
-        ]}]
+        ]}
       });
       const text = response.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || '';
       res.json({ text });
