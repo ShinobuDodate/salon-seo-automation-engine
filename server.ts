@@ -308,6 +308,35 @@ function startPublishTimer() {
   }, 60000);
 }
 
+// Cloud RunではADCトークンを使いAPIキー不要で呼び出す。ローカルはAPIキーにフォールバック。
+async function callGeminiREST(model: string, contents: any[], generationConfig?: any, tools?: any[]): Promise<any> {
+  let authHeader: string | null = null;
+  try {
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 1500);
+    const r = await fetch(
+      'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',
+      { headers: { 'Metadata-Flavor': 'Google' }, signal: ctrl.signal }
+    );
+    if (r.ok) { const { access_token } = await r.json(); authHeader = `Bearer ${access_token}`; }
+  } catch { /* ローカル環境 */ }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!authHeader && !apiKey) throw new Error('GEMINI_API_KEY not configured');
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent${authHeader ? '' : `?key=${apiKey}`}`;
+  const body: any = { contents };
+  if (generationConfig) body.generationConfig = generationConfig;
+  if (tools && tools.length > 0) body.tools = tools;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(authHeader ? { Authorization: authHeader } : {}) },
+    body: JSON.stringify(body)
+  });
+  const result = await res.json();
+  if (result.error) throw new Error(JSON.stringify(result.error));
+  return result;
+}
+
 // --- Express server ---
 async function startServer() {
   const app = express();
@@ -411,20 +440,15 @@ async function startServer() {
       return res.json({ text });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
     try {
       const data = (req.body as Buffer).toString('base64');
-      const { GoogleGenAI } = await import('@google/genai');
-      const ai = new GoogleGenAI({ apiKey });
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: { parts: [
+      const result = await callGeminiREST('gemini-3-flash-preview', [
+        { role: 'user', parts: [
           { inlineData: { data, mimeType } },
           { text: 'このファイルの内容を詳しく要約してください。重要な情報・数値・固有名詞をすべて含めてください。' }
         ]}
-      });
-      const text = response.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || '';
+      ]);
+      const text = result.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || '';
       res.json({ text });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -531,30 +555,21 @@ async function startServer() {
   // --- Server-side image generation (keeps Gemini call off browser heap) ---
   app.post("/api/generate-image", async (req, res) => {
     const { prompt, imageMode, referenceImageBase64, mimeType } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
     try {
-      const { GoogleGenAI } = await import('@google/genai');
-      const ai = new GoogleGenAI({ apiKey });
-      const config = { imageConfig: { aspectRatio: "16:9" } };
-      let response;
+      let contents;
       if (imageMode === 'edit' && referenceImageBase64) {
-        response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash-image',
-          contents: { parts: [
-            { inlineData: { data: referenceImageBase64, mimeType: mimeType || 'image/png' } },
-            { text: prompt }
-          ]},
-          config
-        });
+        contents = [{ role: 'user', parts: [
+          { inlineData: { data: referenceImageBase64, mimeType: mimeType || 'image/png' } },
+          { text: prompt }
+        ]}];
       } else {
-        response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash-image',
-          contents: prompt,
-          config
-        });
+        contents = [{ role: 'user', parts: [{ text: prompt }] }];
       }
-      const firstPart = response.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
+      const result = await callGeminiREST('gemini-2.5-flash-image', contents, {
+        responseModalities: ['Text', 'Image'],
+        imageConfig: { aspectRatio: '16:9' }
+      });
+      const firstPart = result.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
       if (firstPart?.inlineData) {
         res.json({ imageBase64: firstPart.inlineData.data, imageMimeType: firstPart.inlineData.mimeType || 'image/png' });
       } else {
@@ -569,58 +584,50 @@ async function startServer() {
   // --- Server-side article text generation (keeps large prompt + Gemini SDK off browser heap) ---
   app.post("/api/generate-article", async (req, res) => {
     const { prompt, modelName, tools } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
     if (!prompt) return res.status(400).json({ error: 'prompt is required' });
 
+    const schema = {
+      type: "OBJECT",
+      properties: {
+        title: { type: "STRING" },
+        content: { type: "STRING" },
+        plainContent: { type: "STRING" },
+        metaDescription: { type: "STRING" },
+        instaCaption: { type: "STRING" },
+        instaHashtags: { type: "STRING" },
+        threadsCaption: { type: "STRING" },
+        jsonLd: { type: "STRING" }
+      },
+      required: ["title", "content", "plainContent", "metaDescription", "instaCaption", "instaHashtags", "threadsCaption"]
+    };
+
+    const genConfig = {
+      responseMimeType: "application/json",
+      responseSchema: schema,
+      maxOutputTokens: 8192,
+      thinkingConfig: { thinkingBudget: 0 }
+    };
+
+    const callWithRetry = async (fn: () => Promise<any>, maxRetries = 5, initialDelay = 2000): Promise<any> => {
+      let retries = 0;
+      while (retries < maxRetries) {
+        try { return await fn(); } catch (error: any) {
+          const errorStr = ((error.message || '') + (error.stack || '')).toLowerCase();
+          const isFatal = errorStr.includes('401') || errorStr.includes('403') ||
+                          errorStr.includes('invalid api key') || errorStr.includes('unauthorized') ||
+                          errorStr.includes('permission denied');
+          if (!isFatal && retries < maxRetries - 1) {
+            await new Promise(r => setTimeout(r, initialDelay * Math.pow(2, retries)));
+            retries++;
+          } else throw error;
+        }
+      }
+    };
+
     try {
-      const { GoogleGenAI, Type, ThinkingLevel } = await import('@google/genai');
-      const ai = new GoogleGenAI({ apiKey });
-
-      const callWithRetry = async (fn: () => Promise<any>, maxRetries = 5, initialDelay = 2000): Promise<any> => {
-        let retries = 0;
-        while (retries < maxRetries) {
-          try { return await fn(); } catch (error: any) {
-            const errorStr = ((error.message || '') + (error.stack || '')).toLowerCase();
-            const isFatal = errorStr.includes('401') || errorStr.includes('403') ||
-                            errorStr.includes('invalid api key') || errorStr.includes('unauthorized') ||
-                            errorStr.includes('permission denied');
-            if (!isFatal && retries < maxRetries - 1) {
-              await new Promise(r => setTimeout(r, initialDelay * Math.pow(2, retries)));
-              retries++;
-            } else throw error;
-          }
-        }
-      };
-
-      const schema = {
-        type: Type.OBJECT,
-        properties: {
-          title: { type: Type.STRING },
-          content: { type: Type.STRING },
-          plainContent: { type: Type.STRING },
-          metaDescription: { type: Type.STRING },
-          instaCaption: { type: Type.STRING },
-          instaHashtags: { type: Type.STRING },
-          threadsCaption: { type: Type.STRING },
-          jsonLd: { type: Type.STRING }
-        },
-        required: ["title", "content", "plainContent", "metaDescription", "instaCaption", "instaHashtags", "threadsCaption"]
-      };
-
-      const response = await callWithRetry(() => ai.models.generateContent({
-        model: modelName,
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: schema,
-          maxOutputTokens: 8192,
-          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-          tools: tools && tools.length > 0 ? tools : undefined
-        }
-      }));
-
-      let text = response?.text || '';
+      const contents = [{ role: 'user', parts: [{ text: prompt }] }];
+      const response = await callWithRetry(() => callGeminiREST(modelName, contents, genConfig, tools));
+      let text = response?.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || '';
 
       // Repair step: if response is clearly incomplete, re-ask Gemini on the server
       let needsRepair = false;
@@ -633,12 +640,10 @@ async function startServer() {
         console.log('[generate-article] Response incomplete, attempting repair...');
         const repairPrompt = `あなたは高度なJSONデータ修復専門のAIです。\n以下のテキストは、ブログ記事生成AIが出力した「不完全」または「壊れた」JSONデータです。\n内容（記事本文やタイトルなど）を一切損なうことなく、不足している閉じ括弧、引用符、カンマなどを補完し、指定されたスキーマに完全に準拠した有効なJSON形式に修正してください。\n出力はJSONのみとしてください。\n\n【壊れたテキスト】\n${text}`;
         try {
-          const repairRes = await callWithRetry(() => ai.models.generateContent({
-            model: modelName,
-            contents: repairPrompt,
-            config: { responseMimeType: "application/json", responseSchema: schema, thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
-          }));
-          if (repairRes?.text) text = repairRes.text;
+          const repairContents = [{ role: 'user', parts: [{ text: repairPrompt }] }];
+          const repairRes = await callWithRetry(() => callGeminiREST(modelName, repairContents, { responseMimeType: "application/json", responseSchema: schema, thinkingConfig: { thinkingBudget: 0 } }));
+          const repaired = repairRes?.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text;
+          if (repaired) text = repaired;
         } catch (repairErr: any) {
           console.error('[generate-article] Repair failed:', repairErr.message);
         }
