@@ -559,6 +559,91 @@ async function startServer() {
     }
   });
 
+  // --- Server-side article text generation (keeps large prompt + Gemini SDK off browser heap) ---
+  app.post("/api/generate-article", async (req, res) => {
+    const { prompt, modelName, tools } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
+    if (!prompt) return res.status(400).json({ error: 'prompt is required' });
+
+    try {
+      const { GoogleGenAI, Type, ThinkingLevel } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey });
+
+      const callWithRetry = async (fn: () => Promise<any>, maxRetries = 5, initialDelay = 2000): Promise<any> => {
+        let retries = 0;
+        while (retries < maxRetries) {
+          try { return await fn(); } catch (error: any) {
+            const errorStr = ((error.message || '') + (error.stack || '')).toLowerCase();
+            const isFatal = errorStr.includes('401') || errorStr.includes('403') ||
+                            errorStr.includes('invalid api key') || errorStr.includes('unauthorized') ||
+                            errorStr.includes('permission denied');
+            if (!isFatal && retries < maxRetries - 1) {
+              await new Promise(r => setTimeout(r, initialDelay * Math.pow(2, retries)));
+              retries++;
+            } else throw error;
+          }
+        }
+      };
+
+      const schema = {
+        type: Type.OBJECT,
+        properties: {
+          title: { type: Type.STRING },
+          content: { type: Type.STRING },
+          plainContent: { type: Type.STRING },
+          metaDescription: { type: Type.STRING },
+          instaCaption: { type: Type.STRING },
+          instaHashtags: { type: Type.STRING },
+          threadsCaption: { type: Type.STRING },
+          jsonLd: { type: Type.STRING }
+        },
+        required: ["title", "content", "plainContent", "metaDescription", "instaCaption", "instaHashtags", "threadsCaption"]
+      };
+
+      const response = await callWithRetry(() => ai.models.generateContent({
+        model: modelName,
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: schema,
+          maxOutputTokens: 8192,
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          tools: tools && tools.length > 0 ? tools : undefined
+        }
+      }));
+
+      let text = response?.text || '';
+
+      // Repair step: if response is clearly incomplete, re-ask Gemini on the server
+      let needsRepair = false;
+      try {
+        const parsed = JSON.parse(text);
+        if (!parsed.title || !parsed.content || parsed.content.length < 500) needsRepair = true;
+      } catch { needsRepair = true; }
+
+      if (needsRepair && text) {
+        console.log('[generate-article] Response incomplete, attempting repair...');
+        const repairPrompt = `あなたは高度なJSONデータ修復専門のAIです。\n以下のテキストは、ブログ記事生成AIが出力した「不完全」または「壊れた」JSONデータです。\n内容（記事本文やタイトルなど）を一切損なうことなく、不足している閉じ括弧、引用符、カンマなどを補完し、指定されたスキーマに完全に準拠した有効なJSON形式に修正してください。\n出力はJSONのみとしてください。\n\n【壊れたテキスト】\n${text}`;
+        try {
+          const repairRes = await callWithRetry(() => ai.models.generateContent({
+            model: modelName,
+            contents: repairPrompt,
+            config: { responseMimeType: "application/json", responseSchema: schema, thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+          }));
+          if (repairRes?.text) text = repairRes.text;
+        } catch (repairErr: any) {
+          console.error('[generate-article] Repair failed:', repairErr.message);
+        }
+      }
+
+      res.json({ text });
+    } catch (e: any) {
+      console.error('[generate-article] Error:', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

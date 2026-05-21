@@ -844,9 +844,8 @@ ${rawText}`;
     };
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const modelName = blogSettings.modelSelection === 'pro' ? 'gemini-3.1-pro-preview' : 'gemini-3-flash-preview';
-      
+
       // Select a random angle to increase variety
       const angles = [
         '教育的・解説型（読者の悩みを専門知識で解決する）',
@@ -959,68 +958,26 @@ ${rawText}`;
       
       出力形式: JSON形式 { "title": "...", "content": "...", "plainContent": "...", "metaDescription": "...", "instaCaption": "...", "instaHashtags": "...", "threadsCaption": "..." ${blogSettings.enableGeoOptimization ? ', "jsonLd": "..."' : ''} }`;
 
-      const contentResponse = await callGeminiWithRetry(() => ai.models.generateContent({
-        model: modelName,
-        contents: contentPrompt,
-        config: { 
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              title: { type: Type.STRING },
-              content: { type: Type.STRING },
-              plainContent: { type: Type.STRING },
-              metaDescription: { type: Type.STRING },
-              instaCaption: { type: Type.STRING },
-              instaHashtags: { type: Type.STRING },
-              threadsCaption: { type: Type.STRING },
-              jsonLd: { type: Type.STRING }
-            },
-            required: ["title", "content", "plainContent", "metaDescription", "instaCaption", "instaHashtags", "threadsCaption"]
-          },
-          maxOutputTokens: 8192,
-          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-          tools: tools.length > 0 ? tools : undefined
-        }
-      }));
-
-      if (!contentResponse || !contentResponse.text) {
-        console.error("Empty AI response:", contentResponse);
+      if (!isBatchMode) setState(prev => ({ ...prev, progressMessage: 'サーバーで記事テキストを生成中...' }));
+      const articleRes = await fetch('/api/generate-article', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: contentPrompt, modelName, tools })
+      });
+      if (!articleRes.ok) {
+        const errData = await articleRes.json().catch(() => ({ error: '不明なサーバーエラー' }));
+        throw new Error(errData.error || 'サーバーでの記事生成に失敗しました');
+      }
+      const articleServerData = await articleRes.json();
+      if (!articleServerData.text) {
         throw new Error('AIからの応答が空でした。通信状況を確認してもう一度お試しください。');
       }
 
-      let blogData = safeParseJson(contentResponse.text, null);
-
-      // --- Pro Verification & Repair Step ---
-      if (!blogData || !blogData.title || !blogData.content || blogData.content.length < 500) {
-        console.warn("Initial generation incomplete or invalid. Triggering Pro Repair...");
-        if (!isBatchMode) {
-          setState(prev => ({ ...prev, progressMessage: "AIが生成内容を検証・修復中..." }));
-        }
-        
-        const repairedText = await repairJsonWithPro(contentResponse.text || "", {
-          type: Type.OBJECT,
-          properties: {
-            title: { type: Type.STRING },
-            content: { type: Type.STRING },
-            plainContent: { type: Type.STRING },
-            metaDescription: { type: Type.STRING },
-            instaCaption: { type: Type.STRING },
-            instaHashtags: { type: Type.STRING },
-            threadsCaption: { type: Type.STRING },
-            jsonLd: { type: Type.STRING }
-          },
-          required: ["title", "content", "plainContent", "metaDescription", "instaCaption", "instaHashtags"]
-        });
-
-        if (repairedText) {
-          blogData = safeParseJson(repairedText, blogData);
-        }
-      }
+      let blogData = safeParseJson(articleServerData.text, null);
 
       if (!blogData || typeof blogData !== 'object' || (!blogData.title && !blogData.content)) {
-        console.error("Invalid blog data after repair attempt:", blogData, "Raw text:", contentResponse.text);
-        throw new Error('AIからの応答を修復できませんでした。もう一度お試しください。');
+        console.error("Invalid blog data:", blogData, "Raw text:", articleServerData.text);
+        throw new Error('AIからの応答を解析できませんでした。もう一度お試しください。');
       }
 
       // Use the provided content directly
