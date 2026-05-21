@@ -2965,6 +2965,9 @@ ${rawText}`;
                                 <span className="text-[8px] text-black/20">
                                   PDF, TXT, JPG, PNG (複数可)
                                 </span>
+                                <span className="text-[8px] text-red-400 font-bold">
+                                  ⚠️ 1ファイル80MB以内
+                                </span>
                               </div>
                               <input
                                 type="file"
