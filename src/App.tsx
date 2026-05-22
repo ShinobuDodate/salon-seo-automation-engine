@@ -1070,23 +1070,22 @@ ${rawText}`;
       } else if (blogSettings.imageMode === 'edit' && selectedImage) {
         // Image-to-Image
         try {
-          const imagePrompt = blogSettings.customImagePrompt 
+          const imagePrompt = blogSettings.customImagePrompt
             ? `${blogSettings.customImagePrompt}. Keywords: ${keywordsString}. STRICT RULE: DO NOT include any text, letters, or characters in the image.`
             : `${selectedImageStyle} Professional photography, 4k. STRICT RULE: DO NOT include any text, letters, or characters in the image. Keywords: ${keywordsString}`;
-          
-          const imgRes = await fetch('/api/generate-image', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              prompt: imagePrompt,
-              imageMode: 'edit',
-              referenceImageBase64: selectedImage.split(',')[1] || selectedImage,
-              mimeType: 'image/png'
-            })
+
+          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+          const imgResponse = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: { parts: [
+              { inlineData: { data: selectedImage.split(',')[1] || selectedImage, mimeType: 'image/png' } },
+              { text: imagePrompt }
+            ]},
+            config: { imageConfig: { aspectRatio: "16:9" } }
           });
-          const imgData = await imgRes.json();
-          if (imgData.imageBase64) {
-            imageBase64 = imgData.imageBase64;
+          const imgPart = imgResponse.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
+          if (imgPart?.inlineData) {
+            imageBase64 = imgPart.inlineData.data;
             if (blogSettings.bannerText) {
               const overlaid = await overlayTextOnImage(imageBase64, blogSettings.bannerText);
               imageUrl = overlaid.url;
@@ -1095,7 +1094,6 @@ ${rawText}`;
               imageUrl = `data:image/png;base64,${imageBase64}`;
             }
           } else {
-            // Fallback to original if AI edit fails
             imageUrl = selectedImage;
             imageBase64 = selectedImage.split(',')[1] || selectedImage;
           }
@@ -1112,15 +1110,16 @@ ${rawText}`;
           const imagePrompt = blogSettings.customImagePrompt
             ? `${blogSettings.customImagePrompt}. Keywords: ${keywordsString}. STRICT RULE: DO NOT include any text, letters, or characters in the image.`
             : `${selectedImageStyle} This image is for a Japanese beauty salon blog article. Title: "${articleTitle}". Summary: "${articleSummary}". The image must visually represent the article content. Professional photography, 4k. STRICT RULE: DO NOT include any text, letters, or characters in the image. No text, no letters, no characters, no writing. Keywords: ${keywordsString}`;
-          
-          const imgRes = await fetch('/api/generate-image', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt: imagePrompt, imageMode: 'ai' })
+
+          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+          const imgResponse = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: imagePrompt,
+            config: { imageConfig: { aspectRatio: "16:9" } }
           });
-          const imgData = await imgRes.json();
-          if (imgData.imageBase64) {
-            imageBase64 = imgData.imageBase64;
+          const imgPart = imgResponse.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
+          if (imgPart?.inlineData) {
+            imageBase64 = imgPart.inlineData.data;
             if (blogSettings.bannerText) {
               const overlaid = await overlayTextOnImage(imageBase64, blogSettings.bannerText);
               imageUrl = overlaid.url;
@@ -1643,14 +1642,15 @@ ${rawText}`;
         const imagePrompt = blogSettings.customImagePrompt
           ? `${blogSettings.customImagePrompt}. Keywords: ${keywordsString}. STRICT RULE: DO NOT include any text, letters, or characters in the image.`
           : `${selectedImageStyle} This image is for a Japanese beauty salon blog article. Title: "${post.title}". Summary: "${post.metaDescription || ''}". Professional photography, 4k. STRICT RULE: DO NOT include any text, letters, or characters in the image. Keywords: ${keywordsString}`;
-        const imgRes = await fetch('/api/generate-image', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: imagePrompt, imageMode: 'ai' })
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        const imgResponse = await ai.models.generateContent({
+          model: 'gemini-2.5-flash-image',
+          contents: imagePrompt,
+          config: { imageConfig: { aspectRatio: "16:9" } }
         });
-        const imgData = await imgRes.json();
-        if (imgData.imageBase64) {
-          const imageUrl = `data:image/png;base64,${imgData.imageBase64}`;
+        const imgPart = imgResponse.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
+        if (imgPart?.inlineData) {
+          const imageUrl = `data:image/png;base64,${imgPart.inlineData.data}`;
           setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, imageUrl, imageBase64: '' } : p));
           successCount++;
         }
