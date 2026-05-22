@@ -700,9 +700,16 @@ function AppContent() {
           return { ...prev, sourceFiles: [...prev.sourceFiles, { name: file.name, extractedText: '解析中...' }] };
         });
 
-        const reader = new FileReader();
         const mimeType = file.type || (file.name.endsWith('.pdf') ? 'application/pdf' : 'text/plain');
         const isTxt = mimeType === 'text/plain' || file.name.endsWith('.txt') || file.name.endsWith('.md') || file.name.endsWith('.csv');
+        const maxBytes = 50 * 1024 * 1024; // 50MB (Geminiの上限)
+        if (!isTxt && file.size > maxBytes) {
+          setBlogSettings(prev => ({ ...prev, sourceFiles: prev.sourceFiles.filter(f => f.name !== file.name) }));
+          setNotification({ message: `ファイルが大きすぎます（${(file.size / 1024 / 1024).toFixed(0)}MB）。PDF・画像は50MB以内にしてください。`, type: 'error' });
+          return;
+        }
+
+        const reader = new FileReader();
 
         reader.onloadend = async () => {
           try {
