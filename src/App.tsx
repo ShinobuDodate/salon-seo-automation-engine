@@ -964,22 +964,21 @@ ${rawText}`;
       
       出力形式: JSON形式 { "title": "...", "content": "...", "plainContent": "...", "metaDescription": "...", "instaCaption": "...", "instaHashtags": "...", "threadsCaption": "..." ${blogSettings.enableGeoOptimization ? ', "jsonLd": "..."' : ''} }`;
 
-      if (!isBatchMode) setState(prev => ({ ...prev, progressMessage: 'サーバーで記事テキストを生成中...' }));
-      const articleRes = await fetch('/api/generate-article', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: contentPrompt, modelName, tools })
-      });
-      if (!articleRes.ok) {
-        const errData = await articleRes.json().catch(() => ({ error: '不明なサーバーエラー' }));
-        throw new Error(errData.error || 'サーバーでの記事生成に失敗しました');
-      }
-      const articleServerData = await articleRes.json();
-      if (!articleServerData.text) {
-        throw new Error('AIからの応答が空でした。通信状況を確認してもう一度お試しください。');
+      if (!isBatchMode) setState(prev => ({ ...prev, progressMessage: '記事テキストを生成中...' }));
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const articleResponse = await callGeminiWithRetry(() => ai.models.generateContent({
+        model: modelName,
+        contents: contentPrompt,
+        config: {
+          responseMimeType: "application/json",
+          tools: tools.length > 0 ? tools : undefined
+        }
+      }));
+      if (!articleResponse?.text) {
+        throw new Error('AIからの応答が空でした。もう一度お試しください。');
       }
 
-      let blogData = safeParseJson(articleServerData.text, null);
+      let blogData = safeParseJson(articleResponse.text, null);
 
       if (!blogData || typeof blogData !== 'object' || (!blogData.title && !blogData.content)) {
         console.error("Invalid blog data:", blogData, "Raw text:", articleServerData.text);
