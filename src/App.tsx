@@ -656,6 +656,7 @@ function AppContent() {
   const importPosts = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = '';
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
@@ -3376,6 +3377,7 @@ ${rawText}`;
                               onChange={(e) => {
                                 const files = e.target.files;
                                 if (!files) return;
+                                e.target.value = '';
                                 Array.from(files).forEach((file: File) => {
                                   const reader = new FileReader();
                                   reader.onload = (ev) => {
@@ -5026,6 +5028,7 @@ ${rawText}`;
                               onChange={(e) => {
                                 const file = e.target.files?.[0];
                                 if (!file) return;
+                                e.target.value = '';
                                 const reader = new FileReader();
                                 reader.onload = (ev) => {
                                   if (ev.target?.result) {
