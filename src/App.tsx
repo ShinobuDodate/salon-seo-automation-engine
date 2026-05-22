@@ -689,6 +689,7 @@ function AppContent() {
     let files: File[] = [];
     if ('files' in e.target && e.target.files) {
       files = Array.from(e.target.files);
+      e.target.value = ''; // ファイル入力をリセット（同じファイルを再選択できるように）
     } else if ('dataTransfer' in e && e.dataTransfer.files) {
       files = Array.from(e.dataTransfer.files);
     }
@@ -725,14 +726,15 @@ function AppContent() {
               }
               const base64 = btoa(binary);
               const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-              const response = await ai.models.generateContent({
+              // レートリミット対策：失敗時に自動リトライ
+              const response = await callGeminiWithRetry(() => ai.models.generateContent({
                 model: 'gemini-3-flash-preview',
                 contents: { parts: [
                   { inlineData: { data: base64, mimeType } },
                   { text: 'このファイルの内容を詳しく要約してください。重要な情報・数値・固有名詞をすべて含めてください。' }
                 ]}
-              });
-              extractedText = response.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || '';
+              }));
+              extractedText = response?.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || '';
               if (!extractedText) throw new Error('AIからの応答が空でした。もう一度お試しください。');
             }
 
@@ -743,9 +745,16 @@ function AppContent() {
               )
             }));
           } catch (err: any) {
+            // エラー時は「解析中...」のまま残さず必ず削除
             setBlogSettings(prev => ({ ...prev, sourceFiles: prev.sourceFiles.filter(f => f.name !== file.name) }));
             setNotification({ message: `ファイル解析エラー: ${err.message}`, type: 'error' });
           }
+        };
+
+        // FileReader自体が失敗した場合も「解析中...」を残さず削除
+        reader.onerror = () => {
+          setBlogSettings(prev => ({ ...prev, sourceFiles: prev.sourceFiles.filter(f => f.name !== file.name) }));
+          setNotification({ message: `ファイルの読み込みに失敗しました。`, type: 'error' });
         };
 
         if (isTxt) {
