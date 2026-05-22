@@ -1129,28 +1129,28 @@ ${rawText}`;
       console.error("Generation error:", error);
       const errorMsg = error.message || String(error);
       const errorStr = (errorMsg + (error.stack || '')).toLowerCase();
-      if (!isBatchMode) {
-        let errorMessage = '記事の生成に失敗しました。';
-        
-        const isQuotaError = errorStr.includes('429') || 
-                             errorStr.includes('resource_exhausted') || 
-                             errorStr.includes('exceeded quota') ||
-                             errorStr.includes('quota exceeded');
+      let errorMessage = '記事の生成に失敗しました。';
 
-        if (isQuotaError) {
-          errorMessage = 'APIの利用制限（クォータ）に達しました。';
-          if (blogSettings.modelSelection === 'pro') {
-            errorMessage += ' Gemini 3.1 Proは制限が厳しいため、設定パネル下部で「Gemini 3 Flash」に切り替えてお試しください。';
-          } else {
-            errorMessage += ' 少し時間を置いてから再度お試しいただくか、生成する記事数を減らしてください。';
-          }
+      const isQuotaError = errorStr.includes('429') ||
+                           errorStr.includes('resource_exhausted') ||
+                           errorStr.includes('exceeded quota') ||
+                           errorStr.includes('quota exceeded');
+
+      if (isQuotaError) {
+        errorMessage = 'APIの利用制限（クォータ）に達しました。';
+        if (blogSettings.modelSelection === 'pro') {
+          errorMessage += ' Gemini 3.1 Proは制限が厳しいため、設定パネル下部で「Gemini 3 Flash」に切り替えてお試しください。';
         } else {
-          errorMessage = `生成エラー: ${errorMsg}`;
+          errorMessage += ' 少し時間を置いてから再度お試しいただくか、生成する記事数を減らしてください。';
         }
-        
-        setState({ status: 'idle', error: undefined });
-        setNotification({ message: errorMessage, type: 'error' });
+      } else {
+        errorMessage = `生成エラー: ${errorMsg}`;
       }
+
+      if (!isBatchMode) {
+        setState({ status: 'idle', error: undefined });
+      }
+      setNotification({ message: errorMessage, type: 'error' });
       return null;
     }
   };
