@@ -706,7 +706,7 @@ function AppContent() {
           try {
             const res = await fetch('/api/extract-file-context', {
               method: 'POST',
-              headers: { 'X-File-Type': mimeType },
+              headers: { 'Content-Type': 'application/octet-stream', 'X-File-Type': mimeType },
               body: reader.result as ArrayBuffer
             });
             const result = await res.json();
