@@ -1148,7 +1148,8 @@ ${rawText}`;
           errorMessage = `生成エラー: ${errorMsg}`;
         }
         
-        setState({ status: 'error', error: errorMessage });
+        setState({ status: 'idle', error: undefined });
+        setNotification({ message: errorMessage, type: 'error' });
       }
       return null;
     }
@@ -1363,7 +1364,8 @@ ${rawText}`;
         errorMessage = `一括生成エラー: ${errorMsg}`;
       }
       
-      setState({ status: 'error', error: errorMessage });
+      setState({ status: 'idle', error: undefined });
+      setNotification({ message: errorMessage, type: 'error' });
     }
   };
 
