@@ -701,20 +701,38 @@ function AppContent() {
         });
 
         const reader = new FileReader();
+        const mimeType = file.type || (file.name.endsWith('.pdf') ? 'application/pdf' : 'text/plain');
+        const isTxt = mimeType === 'text/plain' || file.name.endsWith('.txt') || file.name.endsWith('.md') || file.name.endsWith('.csv');
+
         reader.onloadend = async () => {
-          const mimeType = file.type || (file.name.endsWith('.pdf') ? 'application/pdf' : 'text/plain');
           try {
-            const res = await fetch('/api/extract-file-context', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/octet-stream', 'X-File-Type': mimeType },
-              body: reader.result as ArrayBuffer
-            });
-            const result = await res.json();
-            if (result.error) throw new Error(result.error);
+            let extractedText = '';
+
+            if (isTxt) {
+              extractedText = reader.result as string;
+            } else {
+              const bytes = new Uint8Array(reader.result as ArrayBuffer);
+              let binary = '';
+              for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+              }
+              const base64 = btoa(binary);
+              const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+              const response = await ai.models.generateContent({
+                model: 'gemini-3-flash-preview',
+                contents: { parts: [
+                  { inlineData: { data: base64, mimeType } },
+                  { text: 'このファイルの内容を詳しく要約してください。重要な情報・数値・固有名詞をすべて含めてください。' }
+                ]}
+              });
+              extractedText = response.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || '';
+              if (!extractedText) throw new Error('AIからの応答が空でした。もう一度お試しください。');
+            }
+
             setBlogSettings(prev => ({
               ...prev,
               sourceFiles: prev.sourceFiles.map(f =>
-                f.name === file.name ? { name: file.name, extractedText: result.text } : f
+                f.name === file.name ? { name: file.name, extractedText } : f
               )
             }));
           } catch (err: any) {
@@ -722,7 +740,12 @@ function AppContent() {
             setNotification({ message: `ファイル解析エラー: ${err.message}`, type: 'error' });
           }
         };
-        reader.readAsArrayBuffer(file);
+
+        if (isTxt) {
+          reader.readAsText(file, 'utf-8');
+        } else {
+          reader.readAsArrayBuffer(file);
+        }
       });
     }
   };
@@ -981,7 +1004,7 @@ ${rawText}`;
       let blogData = safeParseJson(articleResponse.text, null);
 
       if (!blogData || typeof blogData !== 'object' || (!blogData.title && !blogData.content)) {
-        console.error("Invalid blog data:", blogData, "Raw text:", articleServerData.text);
+        console.error("Invalid blog data:", blogData, "Raw text:", articleResponse.text);
         throw new Error('AIからの応答を解析できませんでした。もう一度お試しください。');
       }
 
