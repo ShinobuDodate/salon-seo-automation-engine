@@ -1005,11 +1005,28 @@ ${rawText}`;
 
       if (!isBatchMode) setState(prev => ({ ...prev, progressMessage: '記事テキストを生成中...' }));
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const articleSchema = {
+        type: Type.OBJECT,
+        properties: {
+          title: { type: Type.STRING },
+          content: { type: Type.STRING },
+          plainContent: { type: Type.STRING },
+          metaDescription: { type: Type.STRING },
+          instaCaption: { type: Type.STRING },
+          instaHashtags: { type: Type.STRING },
+          threadsCaption: { type: Type.STRING },
+          jsonLd: { type: Type.STRING }
+        },
+        required: ["title", "content", "plainContent", "metaDescription", "instaCaption", "instaHashtags", "threadsCaption"]
+      };
       const articleResponse = await callGeminiWithRetry(() => ai.models.generateContent({
         model: modelName,
         contents: contentPrompt,
         config: {
           responseMimeType: "application/json",
+          responseSchema: articleSchema,
+          maxOutputTokens: 8192,
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
           tools: tools.length > 0 ? tools : undefined
         }
       }));
@@ -1017,10 +1034,31 @@ ${rawText}`;
         throw new Error('AIからの応答が空でした。もう一度お試しください。');
       }
 
-      let blogData = safeParseJson(articleResponse.text, null);
+      // JSONが不完全な場合は修復を試みる
+      let rawText = articleResponse.text;
+      let needsRepair = false;
+      try {
+        const parsed = JSON.parse(rawText);
+        if (!parsed.title || !parsed.content || parsed.content.length < 500) needsRepair = true;
+      } catch { needsRepair = true; }
+
+      if (needsRepair && rawText) {
+        if (!isBatchMode) setState(prev => ({ ...prev, progressMessage: '記事を修復中...' }));
+        const repairPrompt = `以下のテキストは不完全または壊れたJSONデータです。内容を一切変えずに、有効なJSON形式に修正してください。出力はJSONのみ。\n\n${rawText}`;
+        try {
+          const repairResponse = await callGeminiWithRetry(() => ai.models.generateContent({
+            model: modelName,
+            contents: repairPrompt,
+            config: { responseMimeType: "application/json", responseSchema: articleSchema, thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+          }));
+          if (repairResponse?.text) rawText = repairResponse.text;
+        } catch { /* 修復失敗時は元のテキストで続行 */ }
+      }
+
+      let blogData = safeParseJson(rawText, null);
 
       if (!blogData || typeof blogData !== 'object' || (!blogData.title && !blogData.content)) {
-        console.error("Invalid blog data:", blogData, "Raw text:", articleResponse.text);
+        console.error("Invalid blog data:", blogData, "Raw text:", rawText);
         throw new Error('AIからの応答を解析できませんでした。もう一度お試しください。');
       }
 
