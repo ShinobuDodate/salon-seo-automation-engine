@@ -2657,7 +2657,7 @@ ${rawText}`;
             transition={{ delay: 0.1 }}
             className="serif text-5xl md:text-7xl font-light tracking-tight"
           >
-            Consultant <span className="italic">Vision</span>
+            自動くん
           </motion.h1>
           
           <motion.p 
