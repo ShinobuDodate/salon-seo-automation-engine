@@ -5293,7 +5293,7 @@ ${rawText}`;
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              <div className="flex-1 overflow-y-auto min-h-0 p-6 space-y-6">
                 {/* サロン一覧 */}
                 {blogSettings.salonProfiles.length === 0 ? (
                   <p className="text-center text-[11px] text-black/30 py-8">登録されたサロンがありません</p>
