@@ -25,7 +25,8 @@ import {
   FileText,
   Globe,
   RefreshCw,
-  Database
+  Database,
+  Pencil
 } from "lucide-react";
 
 // --- Types ---
@@ -533,6 +534,7 @@ function AppContent() {
 
   const [showPresetManager, setShowPresetManager] = useState(false);
   const [showCommonContentManager, setShowCommonContentManager] = useState(false);
+  const [editingCommonContent, setEditingCommonContent] = useState<CommonContent | null>(null);
   const [showSalonContentManager, setShowSalonContentManager] = useState(false);
   const [newSalonContent, setNewSalonContent] = useState<{ name: string; type: 'code' | 'plain'; content: string }>({ name: '', type: 'plain', content: '' });
   const [showAddAccountForm, setShowAddAccountForm] = useState(false);
@@ -3230,17 +3232,54 @@ ${rawText}`;
                               >
                                 <div className="space-y-2">
                                   {blogSettings.commonContents.map((content, idx) => (
-                                    <div key={content.id} className="flex items-center justify-between p-2 bg-white rounded-lg border border-black/5 shadow-sm group">
-                                      <div className="flex flex-col">
-                                        <span className="text-[10px] font-bold text-black/70">{content.name}</span>
-                                        <span className="text-[8px] text-black/30 uppercase">{content.type === 'code' ? 'HTMLコード' : 'プレーンテキスト'}</span>
-                                      </div>
-                                      <button 
-                                        onClick={() => setBlogSettings(prev => ({...prev, commonContents: prev.commonContents.filter((_, i) => i !== idx)}))}
-                                        className="text-black/20 hover:text-red-500 transition-colors p-1"
-                                      >
-                                        <Trash2 size={12} />
-                                      </button>
+                                    <div key={content.id}>
+                                      {editingCommonContent?.id === content.id ? (
+                                        <div className="space-y-2 p-2 bg-gold/5 rounded-lg border border-gold/20">
+                                          <input type="text" value={editingCommonContent.name}
+                                            onChange={(e) => setEditingCommonContent({ ...editingCommonContent, name: e.target.value })}
+                                            className="w-full bg-white border border-black/10 rounded-md px-2 py-1.5 text-[10px] focus:outline-none" />
+                                          <select value={editingCommonContent.type}
+                                            onChange={(e) => setEditingCommonContent({ ...editingCommonContent, type: e.target.value as 'code' | 'plain' })}
+                                            className="w-full bg-white border border-black/10 rounded-md px-2 py-1.5 text-[10px] focus:outline-none">
+                                            <option value="plain">プレーンテキスト</option>
+                                            <option value="code">HTMLコード</option>
+                                          </select>
+                                          <textarea value={editingCommonContent.content}
+                                            onChange={(e) => setEditingCommonContent({ ...editingCommonContent, content: e.target.value })}
+                                            className="w-full bg-white border border-black/10 rounded-md px-2 py-1.5 text-[10px] focus:outline-none h-24 resize-none" />
+                                          <div className="flex space-x-2">
+                                            <button onClick={() => setEditingCommonContent(null)}
+                                              className="flex-1 py-1.5 border border-black/10 rounded-md text-[10px] text-black/40 hover:bg-black/5 transition-all">
+                                              キャンセル
+                                            </button>
+                                            <button onClick={() => {
+                                              if (!editingCommonContent.name || !editingCommonContent.content) return;
+                                              setBlogSettings(prev => ({ ...prev, commonContents: prev.commonContents.map((c, i) => i === idx ? editingCommonContent : c) }));
+                                              setEditingCommonContent(null);
+                                            }}
+                                              className="flex-1 py-1.5 bg-gold text-black font-bold rounded-md text-[10px] hover:bg-gold/80 transition-all">
+                                              更新する
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center justify-between p-2 bg-white rounded-lg border border-black/5 shadow-sm group">
+                                          <div className="flex flex-col">
+                                            <span className="text-[10px] font-bold text-black/70">{content.name}</span>
+                                            <span className="text-[8px] text-black/30 uppercase">{content.type === 'code' ? 'HTMLコード' : 'プレーンテキスト'}</span>
+                                          </div>
+                                          <div className="flex items-center space-x-1">
+                                            <button onClick={() => setEditingCommonContent({ ...content })}
+                                              className="text-black/20 hover:text-gold transition-colors p-1">
+                                              <Pencil size={12} />
+                                            </button>
+                                            <button onClick={() => setBlogSettings(prev => ({...prev, commonContents: prev.commonContents.filter((_, i) => i !== idx)}))}
+                                              className="text-black/20 hover:text-red-500 transition-colors p-1">
+                                              <Trash2 size={12} />
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
                                   ))}
                                 </div>
