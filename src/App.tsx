@@ -684,6 +684,9 @@ function AppContent() {
     const topHtml = getHtml(topId);
     const aboveHtml = getHtml(aboveId);
     const imageHtml = post.imageUrl ? `<div style="margin:40px 0;"><img src="${post.imageUrl}" alt="${post.title}" style="width:100%;height:auto;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.1);"></div>` : '';
+    const bodyContent = topHtml
+      ? post.content.replace('</h1>', '</h1>\n' + topHtml)
+      : post.content;
 
     return `<!DOCTYPE html>
 <html lang="ja">
@@ -707,8 +710,7 @@ function AppContent() {
 </style>
 </head>
 <body>
-${topHtml}
-${post.content}
+${bodyContent}
 ${aboveHtml}
 ${imageHtml}
 </body>
@@ -2331,8 +2333,11 @@ ${rawText}`;
       <img src="${uploadedImageUrl}" alt="${post.keywords.join(', ')}" style="width:100%; height:auto; border-radius:12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
     </div>`;
 
-            const finalContent = `${topHtml}
-    ${post.content.trim()}
+            const baseContent = post.content.trim();
+            const contentWithTop = topHtml
+              ? baseContent.replace('</h1>', '</h1>\n' + topHtml)
+              : baseContent;
+            const finalContent = `${contentWithTop}
     ${aboveImageHtml}
     ${imageHtml}`;
             

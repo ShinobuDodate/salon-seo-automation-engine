@@ -55,7 +55,11 @@ async function publishToWordPress(post: any): Promise<{ success: boolean; wpPost
   const imageHtml = uploadedImageUrl
     ? `<div style="margin: 40px 0;"><img src="${uploadedImageUrl}" alt="${(post.keywords || []).join(', ')}" style="width:100%; height:auto; border-radius:12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);"></div>`
     : '';
-  const finalContent = `${post.top_content_html || ''}\n${(post.content || '').trim()}\n${post.above_image_html || ''}\n${imageHtml}`;
+  const baseContent = (post.content || '').trim();
+  const contentWithTop = post.top_content_html
+    ? baseContent.replace('</h1>', '</h1>\n' + post.top_content_html)
+    : baseContent;
+  const finalContent = `${contentWithTop}\n${post.above_image_html || ''}\n${imageHtml}`;
 
   // 3. Determine post types
   const destinations: string[] = post.wp_destinations || ['news'];
