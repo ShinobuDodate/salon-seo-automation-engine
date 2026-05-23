@@ -103,8 +103,11 @@ interface SalonProfile {
   instagramUrl: string;
   otherUrls: string[];
   notes: string;
-  headerText?: string;
-  footerText?: string;
+  commonContents?: CommonContent[];
+  selectedAboveImageContentId?: string;
+  selectedBottomContentId?: string;
+  selectedInstaBottomContentId?: string;
+  selectedThreadsBottomContentId?: string;
 }
 
 // --- Styles ---
@@ -530,6 +533,8 @@ function AppContent() {
 
   const [showPresetManager, setShowPresetManager] = useState(false);
   const [showCommonContentManager, setShowCommonContentManager] = useState(false);
+  const [showSalonContentManager, setShowSalonContentManager] = useState(false);
+  const [newSalonContent, setNewSalonContent] = useState<{ name: string; type: 'code' | 'plain'; content: string }>({ name: '', type: 'plain', content: '' });
   const [showAddAccountForm, setShowAddAccountForm] = useState(false);
   const [editingAccount, setEditingAccount] = useState<SocialAccount | null>(null);
   const [newAccountData, setNewAccountData] = useState({
@@ -553,7 +558,9 @@ function AppContent() {
   const [showSalonManager, setShowSalonManager] = useState(false);
   const [editingSalon, setEditingSalon] = useState<SalonProfile | null>(null);
   const [newSalon, setNewSalon] = useState<Omit<SalonProfile, 'id'>>({
-    name: '', hpUrl: '', hotpepperUrl: '', instagramUrl: '', otherUrls: [], notes: '', headerText: '', footerText: ''
+    name: '', hpUrl: '', hotpepperUrl: '', instagramUrl: '', otherUrls: [], notes: '',
+    commonContents: [], selectedAboveImageContentId: '', selectedBottomContentId: '',
+    selectedInstaBottomContentId: '', selectedThreadsBottomContentId: ''
   });
   const [isFetchingUrls, setIsFetchingUrls] = useState(false);
   const [showSupabasePanel, setShowSupabasePanel] = useState(false);
@@ -1078,26 +1085,6 @@ ${rawText}`;
         finalContent = finalContent.replace(/\{"@context":\s*"https:\/\/schema\.org"[\s\S]*?\}/g, "");
       }
 
-      // サロン定型文を全形式に差し込む
-      const _boilerplateSalon = blogSettings.salonProfiles.find(s => s.id === blogSettings.selectedSalonId);
-      let finalPlainContent = blogData.plainContent || '';
-      let finalInstaCaption = blogData.instaCaption || '';
-      let finalThreadsCaption = (blogData.threadsCaption || '').replace(/#\S*/g, '').replace(/\s{2,}/g, ' ').trim().substring(0, 280);
-      if (_boilerplateSalon?.headerText?.trim()) {
-        const h = _boilerplateSalon.headerText.trim();
-        finalContent = `<p>${h}</p>\n` + finalContent;
-        finalPlainContent = `${h}\n\n` + finalPlainContent;
-        finalInstaCaption = `${h}\n\n` + finalInstaCaption;
-        finalThreadsCaption = `${h}\n\n` + finalThreadsCaption;
-      }
-      if (_boilerplateSalon?.footerText?.trim()) {
-        const f = _boilerplateSalon.footerText.trim();
-        finalContent = finalContent + `\n<p>${f}</p>`;
-        finalPlainContent = finalPlainContent + `\n\n${f}`;
-        finalInstaCaption = finalInstaCaption + `\n\n${f}`;
-        finalThreadsCaption = finalThreadsCaption + `\n\n${f}`;
-      }
-
       let imageUrl = '';
       let imageBase64 = '';
 
@@ -1201,11 +1188,11 @@ ${rawText}`;
         id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
         title: blogData.title || '無題の記事',
         content: finalContent,
-        plainContent: finalPlainContent,
+        plainContent: blogData.plainContent || '',
         metaDescription: blogData.metaDescription || '',
-        instaCaption: finalInstaCaption,
+        instaCaption: blogData.instaCaption || '',
         instaHashtags: blogData.instaHashtags || '',
-        threadsCaption: finalThreadsCaption,
+        threadsCaption: (blogData.threadsCaption || '').replace(/#\S*/g, '').replace(/\s{2,}/g, ' ').trim().substring(0, 280),
         imageUrl,
         imageBase64: '',
         jsonLd: blogData.jsonLd,
@@ -2133,7 +2120,11 @@ ${rawText}`;
           const wpSite = blogSettings.wpSites?.find((s: WpSite) => s.id === blogSettings.selectedWpSiteId);
           const instaAcc = blogSettings.socialAccounts.find((a: SocialAccount) => a.platform === 'instagram');
           const threadsAcc = blogSettings.socialAccounts.find((a: SocialAccount) => a.platform === 'threads');
-          const bottomContent = blogSettings.commonContents.find((c: CommonContent) => c.id === blogSettings.selectedBottomContentId);
+          const _activeSalon = blogSettings.salonProfiles.find(s => s.id === blogSettings.selectedSalonId);
+          const _activeContents = (_activeSalon?.commonContents && _activeSalon.commonContents.length > 0) ? _activeSalon.commonContents : blogSettings.commonContents;
+          const _activeBottomId = _activeSalon?.selectedBottomContentId || blogSettings.selectedBottomContentId;
+          const _activeInstaBottomId = _activeSalon?.selectedInstaBottomContentId || blogSettings.selectedInstaBottomContentId;
+          const bottomContent = _activeContents.find((c: CommonContent) => c.id === _activeBottomId);
           const bottomHtml = bottomContent
             ? (bottomContent.type === 'plain'
                 ? `<div style="margin:30px 0;padding:20px;background:#f9f9f9;border-radius:10px;border:1px solid #eee;text-align:center;color:#666;font-size:14px;line-height:1.8;">${bottomContent.content.replace(/\n/g, '<br>')}</div>`
@@ -2141,7 +2132,7 @@ ${rawText}`;
             : '';
           const instaCaption = (() => {
             let c = post.instaCaption || `${post.title}\n\n${post.metaDescription}`;
-            const ic = blogSettings.commonContents.find((cc: CommonContent) => cc.id === blogSettings.selectedInstaBottomContentId);
+            const ic = _activeContents.find((cc: CommonContent) => cc.id === _activeInstaBottomId);
             if (ic) c += '\n\n' + ic.content.replace(/<[^>]*>/g, '').trim();
             return c;
           })();
@@ -2267,9 +2258,13 @@ ${rawText}`;
           
           // 2. WordPress Post Creation (Only if Blog/News is selected)
           if (hasWpDestination) {
-            // Get common contents
+            // Get common contents (サロン独自設定 → なければグローバル)
+            const _wpActiveSalon = blogSettings.salonProfiles.find(s => s.id === blogSettings.selectedSalonId);
+            const _wpActiveContents = (_wpActiveSalon?.commonContents && _wpActiveSalon.commonContents.length > 0) ? _wpActiveSalon.commonContents : blogSettings.commonContents;
+            const _wpAboveId = _wpActiveSalon?.selectedAboveImageContentId || blogSettings.selectedAboveImageContentId;
+            const _wpBottomId = _wpActiveSalon?.selectedBottomContentId || blogSettings.selectedBottomContentId;
             const getCommonHtml = (id: string) => {
-              const content = blogSettings.commonContents.find(c => c.id === id);
+              const content = _wpActiveContents.find(c => c.id === id);
               if (!content) return '';
               if (content.type === 'plain') {
                 return `<div style="margin: 30px 0; padding: 20px; background: #f9f9f9; border-radius: 10px; border: 1px solid #eee; text-align: center; color: #666; font-size: 14px; line-height: 1.8;">${content.content.replace(/\n/g, '<br>')}</div>`;
@@ -2277,8 +2272,8 @@ ${rawText}`;
               return content.content;
             };
 
-            const aboveImageHtml = getCommonHtml(blogSettings.selectedAboveImageContentId);
-            const bottomHtml = getCommonHtml(blogSettings.selectedBottomContentId);
+            const aboveImageHtml = getCommonHtml(_wpAboveId);
+            const bottomHtml = getCommonHtml(_wpBottomId);
 
             const imageHtml = `<div style="margin: 40px 0;">
       <img src="${uploadedImageUrl}" alt="${post.keywords.join(', ')}" style="width:100%; height:auto; border-radius:12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
@@ -2396,8 +2391,12 @@ ${rawText}`;
           throw new Error("Instagram/ストーリーズへの投稿には画像が必須です。画像を設定してください。");
         }
 
+        const _snsActiveSalon = blogSettings.salonProfiles.find(s => s.id === blogSettings.selectedSalonId);
+        const _snsActiveContents = (_snsActiveSalon?.commonContents && _snsActiveSalon.commonContents.length > 0) ? _snsActiveSalon.commonContents : blogSettings.commonContents;
+        const _snsInstaBottomId = _snsActiveSalon?.selectedInstaBottomContentId || blogSettings.selectedInstaBottomContentId;
+        const _snsThreadsBottomId = _snsActiveSalon?.selectedThreadsBottomContentId || blogSettings.selectedThreadsBottomContentId;
         const getCommonText = (id: string) => {
-          const content = blogSettings.commonContents.find(c => c.id === id);
+          const content = _snsActiveContents.find(c => c.id === id);
           if (!content) return '';
           return '\n\n' + content.content.replace(/<[^>]*>/g, '').trim();
         };
@@ -2406,7 +2405,7 @@ ${rawText}`;
         if (hasInstaDestination && uploadedImageUrl) {
           setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, postingMessage: 'Instagramに投稿中...' } : p));
           let instaCaption = post.instaCaption || `${post.title}\n\n${post.metaDescription}`;
-          instaCaption += getCommonText(blogSettings.selectedInstaBottomContentId);
+          instaCaption += getCommonText(_snsInstaBottomId);
 
           const instaAccounts = blogSettings.socialAccounts.filter((a: SocialAccount) => a.platform === 'instagram');
           if (instaAccounts.length > 0) {
@@ -2441,7 +2440,7 @@ ${rawText}`;
         if (hasThreadsDestination) {
           setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, postingMessage: 'Threadsに投稿中...' } : p));
           let threadsCaption = post.threadsCaption || `${post.title}\n\n${post.metaDescription}`;
-          threadsCaption += getCommonText(blogSettings.selectedThreadsBottomContentId);
+          threadsCaption += getCommonText(_snsThreadsBottomId);
 
           const threadsAccounts = blogSettings.socialAccounts.filter((a: SocialAccount) => a.platform === 'threads');
           for (const acc of threadsAccounts) {
@@ -2606,7 +2605,10 @@ ${rawText}`;
       const hasStory = blogSettings.destinations.includes('instagram_story');
       const hasThreads = !!threadsAccount;
 
-      const bottomContent = blogSettings.commonContents.find((c: CommonContent) => c.id === blogSettings.selectedBottomContentId);
+      const _loopActiveSalon = blogSettings.salonProfiles.find(s => s.id === blogSettings.selectedSalonId);
+      const _loopActiveContents = (_loopActiveSalon?.commonContents && _loopActiveSalon.commonContents.length > 0) ? _loopActiveSalon.commonContents : blogSettings.commonContents;
+      const _loopBottomId = _loopActiveSalon?.selectedBottomContentId || blogSettings.selectedBottomContentId;
+      const bottomContent = _loopActiveContents.find((c: CommonContent) => c.id === _loopBottomId);
       const bottomHtml = bottomContent
         ? (bottomContent.type === 'plain'
             ? `<div style="margin: 30px 0; padding: 20px; background: #f9f9f9; border-radius: 10px; border: 1px solid #eee; text-align: center; color: #666; font-size: 14px; line-height: 1.8;">${bottomContent.content.replace(/\n/g, '<br>')}</div>`
@@ -5393,22 +5395,82 @@ ${rawText}`;
                             className="w-full bg-black/5 border border-black/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-gold/50 resize-none" />
                         </div>
 
-                        <div className="space-y-1">
-                          <label className="text-[10px] text-black/40 font-bold uppercase">冒頭定型文</label>
-                          <p className="text-[9px] text-black/30">全記事の冒頭（HTML・プレーン・Instagram・Threads）に自動挿入されます</p>
-                          <textarea placeholder="例: こんにちは、AAAサロンです。" value={form.headerText || ''}
-                            onChange={(e) => setForm({ ...form, headerText: e.target.value })}
-                            rows={2}
-                            className="w-full bg-black/5 border border-black/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-gold/50 resize-none" />
-                        </div>
+                        {/* 共通コンテンツ（サロン固有） */}
+                        <div className="space-y-2 border-t border-black/5 pt-3 mt-1">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[10px] text-black/40 font-bold uppercase">共通コンテンツ</label>
+                            <button onClick={() => setShowSalonContentManager(!showSalonContentManager)}
+                              className="text-[9px] text-gold hover:underline font-bold">
+                              {showSalonContentManager ? '閉じる' : '管理・追加'}
+                            </button>
+                          </div>
+                          <p className="text-[9px] text-black/30">設定するとグローバル設定より優先して使われます</p>
 
-                        <div className="space-y-1">
-                          <label className="text-[10px] text-black/40 font-bold uppercase">末尾定型文</label>
-                          <p className="text-[9px] text-black/30">全記事の末尾（HTML・プレーン・Instagram・Threads）に自動挿入されます</p>
-                          <textarea placeholder="例: ご予約・お問い合わせはこちら: https://..." value={form.footerText || ''}
-                            onChange={(e) => setForm({ ...form, footerText: e.target.value })}
-                            rows={2}
-                            className="w-full bg-black/5 border border-black/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-gold/50 resize-none" />
+                          {[
+                            { key: 'selectedAboveImageContentId', label: '画像の上 (本文との間)' },
+                            { key: 'selectedBottomContentId', label: '記事の最下部 (WordPress)' },
+                            { key: 'selectedInstaBottomContentId', label: '記事の最下部 (Instagram)' },
+                            { key: 'selectedThreadsBottomContentId', label: '記事の最下部 (Threads)' },
+                          ].map(({ key, label }) => (
+                            <div key={key} className="space-y-1">
+                              <label className="text-[9px] text-black/40 font-bold">{label}</label>
+                              <select
+                                value={(form as any)[key] || ''}
+                                onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                                className="w-full bg-black/5 border border-black/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-gold/50"
+                              >
+                                <option value="">なし（グローバル設定を使用）</option>
+                                {(form.commonContents || []).map((c: CommonContent) => (
+                                  <option key={c.id} value={c.id}>{c.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                          ))}
+
+                          {showSalonContentManager && (
+                            <div className="space-y-2 pt-2 border-t border-black/5">
+                              {(form.commonContents || []).length === 0 && (
+                                <p className="text-[9px] text-black/30 text-center py-2">まだコンテンツがありません</p>
+                              )}
+                              {(form.commonContents || []).map((content: CommonContent, idx: number) => (
+                                <div key={content.id} className="flex items-center justify-between p-2 bg-white rounded-lg border border-black/5 shadow-sm">
+                                  <div className="flex flex-col">
+                                    <span className="text-[10px] font-bold text-black/70">{content.name}</span>
+                                    <span className="text-[8px] text-black/30 uppercase">{content.type === 'code' ? 'HTMLコード' : 'プレーンテキスト'}</span>
+                                  </div>
+                                  <button onClick={() => setForm({ ...form, commonContents: (form.commonContents || []).filter((_: CommonContent, i: number) => i !== idx) })}
+                                    className="text-black/20 hover:text-red-500 transition-colors p-1">
+                                    <Trash2 size={12} />
+                                  </button>
+                                </div>
+                              ))}
+                              <div className="space-y-2 p-2 bg-white rounded-lg border border-gold/20">
+                                <input type="text" value={newSalonContent.name}
+                                  onChange={(e) => setNewSalonContent({ ...newSalonContent, name: e.target.value })}
+                                  placeholder="コンテンツ名 (例: LINE誘導)"
+                                  className="w-full bg-black/5 border border-black/10 rounded-md px-2 py-1.5 text-[10px] focus:outline-none" />
+                                <select value={newSalonContent.type}
+                                  onChange={(e) => setNewSalonContent({ ...newSalonContent, type: e.target.value as 'code' | 'plain' })}
+                                  className="w-full bg-black/5 border border-black/10 rounded-md px-2 py-1.5 text-[10px] focus:outline-none">
+                                  <option value="plain">プレーンテキスト</option>
+                                  <option value="code">HTMLコード</option>
+                                </select>
+                                <textarea value={newSalonContent.content}
+                                  onChange={(e) => setNewSalonContent({ ...newSalonContent, content: e.target.value })}
+                                  placeholder="内容を入力..."
+                                  className="w-full bg-black/5 border border-black/10 rounded-md px-2 py-1.5 text-[10px] focus:outline-none h-20 resize-none" />
+                                <button onClick={() => {
+                                  if (!newSalonContent.name || !newSalonContent.content) return;
+                                  const nc: CommonContent = { id: `sc-${Date.now()}`, ...newSalonContent };
+                                  setForm({ ...form, commonContents: [...(form.commonContents || []), nc] });
+                                  setNewSalonContent({ name: '', type: 'plain', content: '' });
+                                }}
+                                  className="w-full bg-gold/80 text-black font-bold py-1.5 rounded-lg text-[10px] hover:bg-gold transition-all">
+                                  追加する
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         <div className="flex space-x-2">
@@ -5433,7 +5495,8 @@ ${rawText}`;
                                   ...blogSettings,
                                   salonProfiles: [...blogSettings.salonProfiles, { id, ...newSalon }]
                                 });
-                                setNewSalon({ name: '', hpUrl: '', hotpepperUrl: '', instagramUrl: '', otherUrls: [], notes: '', headerText: '', footerText: '' });
+                                setNewSalon({ name: '', hpUrl: '', hotpepperUrl: '', instagramUrl: '', otherUrls: [], notes: '', commonContents: [], selectedAboveImageContentId: '', selectedBottomContentId: '', selectedInstaBottomContentId: '', selectedThreadsBottomContentId: '' });
+                                setNewSalonContent({ name: '', type: 'plain', content: '' });
                               }
                             }}
                             className="flex-1 bg-gold text-black font-bold py-2 rounded-xl text-xs hover:bg-gold/80 transition-all"
