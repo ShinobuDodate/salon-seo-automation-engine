@@ -725,20 +725,28 @@ ${imageHtml}
     const toText = (c: CommonContent | undefined) => !c ? '' : c.content.replace(/<[^>]*>/g, '').trim();
     const snsTopText = toText(activeContents.find(c => c.id === topId));
     const snsBottomText = toText(activeContents.find(c => c.id === bottomId));
-    const buildFull = (base: string) => {
+    // Instagram: タイトル行（1行目）の後に文頭を挿入
+    const buildInsta = (base: string) => {
       if (!snsTopText && !snsBottomText) return base;
-      const lines = base.split('\n');
-      const firstLine = lines[0];
-      const rest = lines.slice(1).join('\n').trim();
+      const nlIdx = base.indexOf('\n');
+      const firstLine = nlIdx >= 0 ? base.substring(0, nlIdx) : base;
+      const rest = nlIdx >= 0 ? base.substring(nlIdx).trim() : '';
       let c = snsTopText
         ? firstLine + '\n\n' + snsTopText + (rest ? '\n\n' + rest : '')
         : base;
       if (snsBottomText) c += '\n\n' + snsBottomText;
       return c;
     };
+    // Threads: 文頭を本文の前、文末を本文の後
+    const buildThreads = (base: string) => {
+      if (!snsTopText && !snsBottomText) return base;
+      let c = snsTopText ? snsTopText + '\n\n' + base : base;
+      if (snsBottomText) c += '\n\n' + snsBottomText;
+      return c;
+    };
     return {
-      insta: post.instaCaption ? buildFull(post.instaCaption) : '',
-      threads: post.threadsCaption ? buildFull(post.threadsCaption) : '',
+      insta: post.instaCaption ? buildInsta(post.instaCaption) : '',
+      threads: post.threadsCaption ? buildThreads(post.threadsCaption) : '',
     };
   };
 
@@ -2209,19 +2217,23 @@ ${rawText}`;
           const toText = (c: CommonContent | undefined) => !c ? '' : c.content.replace(/<[^>]*>/g, '').trim();
           const snsTopText = toText(_activeContents.find((c: CommonContent) => c.id === _activeTopId));
           const snsBottomText = toText(_activeContents.find((c: CommonContent) => c.id === _activeSnsBottomId));
-          const buildSnsCaption = (base: string) => {
+          const buildInstaCaption = (base: string) => {
             if (!snsTopText && !snsBottomText) return base;
-            const lines = base.split('\n');
-            const firstLine = lines[0];
-            const rest = lines.slice(1).join('\n').trim();
-            let c = snsTopText
-              ? firstLine + '\n\n' + snsTopText + (rest ? '\n\n' + rest : '')
-              : base;
+            const nlIdx = base.indexOf('\n');
+            const firstLine = nlIdx >= 0 ? base.substring(0, nlIdx) : base;
+            const rest = nlIdx >= 0 ? base.substring(nlIdx).trim() : '';
+            let c = snsTopText ? firstLine + '\n\n' + snsTopText + (rest ? '\n\n' + rest : '') : base;
             if (snsBottomText) c += '\n\n' + snsBottomText;
             return c;
           };
-          const instaCaption = buildSnsCaption(post.instaCaption || `${post.title}\n\n${post.metaDescription}`);
-          const threadsCaptionFinal = buildSnsCaption(post.threadsCaption || `${post.title}\n\n${post.metaDescription}`);
+          const buildThreadsCaption = (base: string) => {
+            if (!snsTopText && !snsBottomText) return base;
+            let c = snsTopText ? snsTopText + '\n\n' + base : base;
+            if (snsBottomText) c += '\n\n' + snsBottomText;
+            return c;
+          };
+          const instaCaption = buildInstaCaption(post.instaCaption || `${post.title}\n\n${post.metaDescription}`);
+          const threadsCaptionFinal = buildThreadsCaption(post.threadsCaption || `${post.title}\n\n${post.metaDescription}`);
 
           const payload = {
             scheduled_at: post.scheduledAt,
@@ -2487,21 +2499,24 @@ ${rawText}`;
         const snsTopText = snsTopContent ? snsTopContent.content.replace(/<[^>]*>/g, '').trim() : '';
         const snsBottomContent = _snsActiveContents.find(c => c.id === _snsSnsBottomId);
         const snsBottomText = snsBottomContent ? '\n\n' + snsBottomContent.content.replace(/<[^>]*>/g, '').trim() : '';
-        const buildSnsText = (base: string) => {
+        const buildInstaText = (base: string) => {
           if (!snsTopText && !snsBottomText) return base;
-          const lines = base.split('\n');
-          const firstLine = lines[0];
-          const rest = lines.slice(1).join('\n').trim();
-          let c = snsTopText
-            ? firstLine + '\n\n' + snsTopText + (rest ? '\n\n' + rest : '')
-            : base;
+          const nlIdx = base.indexOf('\n');
+          const firstLine = nlIdx >= 0 ? base.substring(0, nlIdx) : base;
+          const rest = nlIdx >= 0 ? base.substring(nlIdx).trim() : '';
+          let c = snsTopText ? firstLine + '\n\n' + snsTopText + (rest ? '\n\n' + rest : '') : base;
+          return c + snsBottomText;
+        };
+        const buildThreadsText = (base: string) => {
+          if (!snsTopText && !snsBottomText) return base;
+          let c = snsTopText ? snsTopText + '\n\n' + base : base;
           return c + snsBottomText;
         };
 
         // Instagram（即時）
         if (hasInstaDestination && uploadedImageUrl) {
           setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, postingMessage: 'Instagramに投稿中...' } : p));
-          const instaCaption = buildSnsText(post.instaCaption || `${post.title}\n\n${post.metaDescription}`);
+          const instaCaption = buildInstaText(post.instaCaption || `${post.title}\n\n${post.metaDescription}`);
 
           const instaAccounts = blogSettings.socialAccounts.filter((a: SocialAccount) => a.platform === 'instagram');
           if (instaAccounts.length > 0) {
@@ -2535,7 +2550,7 @@ ${rawText}`;
         // Threads（即時）
         if (hasThreadsDestination) {
           setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, postingMessage: 'Threadsに投稿中...' } : p));
-          const threadsCaption = buildSnsText(post.threadsCaption || `${post.title}\n\n${post.metaDescription}`);
+          const threadsCaption = buildThreadsText(post.threadsCaption || `${post.title}\n\n${post.metaDescription}`);
 
           const threadsAccounts = blogSettings.socialAccounts.filter((a: SocialAccount) => a.platform === 'threads');
           for (const acc of threadsAccounts) {
@@ -2711,14 +2726,18 @@ ${rawText}`;
       const aboveHtmlLoop = _loopToHtml(_loopActiveContents.find((c: CommonContent) => c.id === _loopAboveId));
       const _loopSnsTopText = _loopToText(_loopActiveContents.find((c: CommonContent) => c.id === _loopTopId));
       const _loopSnsBottomText = _loopToText(_loopActiveContents.find((c: CommonContent) => c.id === _loopSnsBottomId));
-      const buildLoopSnsCaption = (base: string) => {
+      const buildLoopInstaCaption = (base: string) => {
         if (!_loopSnsTopText && !_loopSnsBottomText) return base;
-        const lines = base.split('\n');
-        const firstLine = lines[0];
-        const rest = lines.slice(1).join('\n').trim();
-        let c = _loopSnsTopText
-          ? firstLine + '\n\n' + _loopSnsTopText + (rest ? '\n\n' + rest : '')
-          : base;
+        const nlIdx = base.indexOf('\n');
+        const firstLine = nlIdx >= 0 ? base.substring(0, nlIdx) : base;
+        const rest = nlIdx >= 0 ? base.substring(nlIdx).trim() : '';
+        let c = _loopSnsTopText ? firstLine + '\n\n' + _loopSnsTopText + (rest ? '\n\n' + rest : '') : base;
+        if (_loopSnsBottomText) c += '\n\n' + _loopSnsBottomText;
+        return c;
+      };
+      const buildLoopThreadsCaption = (base: string) => {
+        if (!_loopSnsTopText && !_loopSnsBottomText) return base;
+        let c = _loopSnsTopText ? _loopSnsTopText + '\n\n' + base : base;
         if (_loopSnsBottomText) c += '\n\n' + _loopSnsBottomText;
         return c;
       };
@@ -2749,9 +2768,9 @@ ${rawText}`;
         image_url: (post.imageUrl && !post.imageUrl.startsWith('data:')) ? post.imageUrl : null,
         image_base64: (post.imageUrl && post.imageUrl.startsWith('data:')) ? post.imageUrl.split(',')[1] : null,
         keywords: post.keywords || [],
-        insta_caption: buildLoopSnsCaption(post.instaCaption || `${post.title}\n\n${post.metaDescription}`),
+        insta_caption: buildLoopInstaCaption(post.instaCaption || `${post.title}\n\n${post.metaDescription}`),
         insta_hashtags: typeof post.instaHashtags === 'string' ? post.instaHashtags : (post.instaHashtags as string[] | undefined)?.join(' ') || null,
-        threads_caption: buildLoopSnsCaption(post.threadsCaption || `${post.title}\n\n${post.metaDescription}`),
+        threads_caption: buildLoopThreadsCaption(post.threadsCaption || `${post.title}\n\n${post.metaDescription}`),
         top_content_html: topHtmlLoop || null,
         above_image_html: aboveHtmlLoop || null,
         post_to_wp: hasWp,
@@ -5260,21 +5279,39 @@ ${rawText}`;
                     {/* 3. Instagram Caption */}
                     <div className="space-y-2">
                       <label className="text-[10px] uppercase tracking-widest font-bold text-black/40">Instagram 用キャプション / スペース</label>
-                      <textarea 
+                      <textarea
                         value={editingPost.instaCaption || ''}
                         onChange={(e) => setEditingPost({ ...editingPost, instaCaption: e.target.value })}
                         className="w-full bg-black/5 border border-black/10 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-gold/20 outline-none transition-all min-h-[300px] resize-y custom-scrollbar"
                       />
+                      {editingPost.instaCaption && (() => {
+                        const preview = computeSnsCaptions(editingPost).insta;
+                        return preview !== editingPost.instaCaption ? (
+                          <div className="mt-2 p-3 bg-pink-50 border border-pink-100 rounded-xl">
+                            <p className="text-[8px] text-pink-400 font-bold uppercase tracking-widest mb-1">投稿時のプレビュー（定型文込み）</p>
+                            <p className="text-[10px] text-black/60 whitespace-pre-wrap leading-relaxed">{preview}</p>
+                          </div>
+                        ) : null;
+                      })()}
                     </div>
 
                     {/* 4. Threads Caption */}
                     <div className="space-y-2">
                       <label className="text-[10px] uppercase tracking-widest font-bold text-black/40">Threads 用テキスト / スペース</label>
-                      <textarea 
+                      <textarea
                         value={editingPost.threadsCaption || ''}
                         onChange={(e) => setEditingPost({ ...editingPost, threadsCaption: e.target.value })}
                         className="w-full bg-black/5 border border-black/10 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-gold/20 outline-none transition-all min-h-[300px] resize-y custom-scrollbar"
                       />
+                      {editingPost.threadsCaption && (() => {
+                        const preview = computeSnsCaptions(editingPost).threads;
+                        return preview !== editingPost.threadsCaption ? (
+                          <div className="mt-2 p-3 bg-gray-50 border border-black/10 rounded-xl">
+                            <p className="text-[8px] text-black/40 font-bold uppercase tracking-widest mb-1">投稿時のプレビュー（定型文込み）</p>
+                            <p className="text-[10px] text-black/60 whitespace-pre-wrap leading-relaxed">{preview}</p>
+                          </div>
+                        ) : null;
+                      })()}
                     </div>
 
                     {/* Small fields: Meta and Hashtags */}
