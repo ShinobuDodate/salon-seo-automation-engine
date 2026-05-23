@@ -103,6 +103,8 @@ interface SalonProfile {
   instagramUrl: string;
   otherUrls: string[];
   notes: string;
+  headerText?: string;
+  footerText?: string;
 }
 
 // --- Styles ---
@@ -551,7 +553,7 @@ function AppContent() {
   const [showSalonManager, setShowSalonManager] = useState(false);
   const [editingSalon, setEditingSalon] = useState<SalonProfile | null>(null);
   const [newSalon, setNewSalon] = useState<Omit<SalonProfile, 'id'>>({
-    name: '', hpUrl: '', hotpepperUrl: '', instagramUrl: '', otherUrls: [], notes: ''
+    name: '', hpUrl: '', hotpepperUrl: '', instagramUrl: '', otherUrls: [], notes: '', headerText: '', footerText: ''
   });
   const [isFetchingUrls, setIsFetchingUrls] = useState(false);
   const [showSupabasePanel, setShowSupabasePanel] = useState(false);
@@ -1076,6 +1078,26 @@ ${rawText}`;
         finalContent = finalContent.replace(/\{"@context":\s*"https:\/\/schema\.org"[\s\S]*?\}/g, "");
       }
 
+      // サロン定型文を全形式に差し込む
+      const _boilerplateSalon = blogSettings.salonProfiles.find(s => s.id === blogSettings.selectedSalonId);
+      let finalPlainContent = blogData.plainContent || '';
+      let finalInstaCaption = blogData.instaCaption || '';
+      let finalThreadsCaption = (blogData.threadsCaption || '').replace(/#\S*/g, '').replace(/\s{2,}/g, ' ').trim().substring(0, 280);
+      if (_boilerplateSalon?.headerText?.trim()) {
+        const h = _boilerplateSalon.headerText.trim();
+        finalContent = `<p>${h}</p>\n` + finalContent;
+        finalPlainContent = `${h}\n\n` + finalPlainContent;
+        finalInstaCaption = `${h}\n\n` + finalInstaCaption;
+        finalThreadsCaption = `${h}\n\n` + finalThreadsCaption;
+      }
+      if (_boilerplateSalon?.footerText?.trim()) {
+        const f = _boilerplateSalon.footerText.trim();
+        finalContent = finalContent + `\n<p>${f}</p>`;
+        finalPlainContent = finalPlainContent + `\n\n${f}`;
+        finalInstaCaption = finalInstaCaption + `\n\n${f}`;
+        finalThreadsCaption = finalThreadsCaption + `\n\n${f}`;
+      }
+
       let imageUrl = '';
       let imageBase64 = '';
 
@@ -1179,11 +1201,11 @@ ${rawText}`;
         id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
         title: blogData.title || '無題の記事',
         content: finalContent,
-        plainContent: blogData.plainContent || '',
+        plainContent: finalPlainContent,
         metaDescription: blogData.metaDescription || '',
-        instaCaption: blogData.instaCaption || '',
+        instaCaption: finalInstaCaption,
         instaHashtags: blogData.instaHashtags || '',
-        threadsCaption: (blogData.threadsCaption || '').replace(/#\S*/g, '').replace(/\s{2,}/g, ' ').trim().substring(0, 280),
+        threadsCaption: finalThreadsCaption,
         imageUrl,
         imageBase64: '',
         jsonLd: blogData.jsonLd,
@@ -5371,6 +5393,24 @@ ${rawText}`;
                             className="w-full bg-black/5 border border-black/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-gold/50 resize-none" />
                         </div>
 
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-black/40 font-bold uppercase">冒頭定型文</label>
+                          <p className="text-[9px] text-black/30">全記事の冒頭（HTML・プレーン・Instagram・Threads）に自動挿入されます</p>
+                          <textarea placeholder="例: こんにちは、AAAサロンです。" value={form.headerText || ''}
+                            onChange={(e) => setForm({ ...form, headerText: e.target.value })}
+                            rows={2}
+                            className="w-full bg-black/5 border border-black/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-gold/50 resize-none" />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-black/40 font-bold uppercase">末尾定型文</label>
+                          <p className="text-[9px] text-black/30">全記事の末尾（HTML・プレーン・Instagram・Threads）に自動挿入されます</p>
+                          <textarea placeholder="例: ご予約・お問い合わせはこちら: https://..." value={form.footerText || ''}
+                            onChange={(e) => setForm({ ...form, footerText: e.target.value })}
+                            rows={2}
+                            className="w-full bg-black/5 border border-black/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-gold/50 resize-none" />
+                        </div>
+
                         <div className="flex space-x-2">
                           {isEditing && (
                             <button onClick={() => setEditingSalon(null)}
@@ -5393,7 +5433,7 @@ ${rawText}`;
                                   ...blogSettings,
                                   salonProfiles: [...blogSettings.salonProfiles, { id, ...newSalon }]
                                 });
-                                setNewSalon({ name: '', hpUrl: '', hotpepperUrl: '', instagramUrl: '', otherUrls: [], notes: '' });
+                                setNewSalon({ name: '', hpUrl: '', hotpepperUrl: '', instagramUrl: '', otherUrls: [], notes: '', headerText: '', footerText: '' });
                               }
                             }}
                             className="flex-1 bg-gold text-black font-bold py-2 rounded-xl text-xs hover:bg-gold/80 transition-all"
