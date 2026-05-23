@@ -105,7 +105,9 @@ interface SalonProfile {
   otherUrls: string[];
   notes: string;
   commonContents?: CommonContent[];
+  selectedTopContentId?: string;
   selectedAboveImageContentId?: string;
+  selectedBelowImageContentId?: string;
   selectedBottomContentId?: string;
   selectedInstaBottomContentId?: string;
   selectedThreadsBottomContentId?: string;
@@ -456,7 +458,9 @@ function AppContent() {
 </div>`
         }
       ] as CommonContent[],
+      selectedTopContentId: '',
       selectedAboveImageContentId: '',
+      selectedBelowImageContentId: '',
       selectedBottomContentId: 'default-footer',
       selectedInstaBottomContentId: '',
       selectedThreadsBottomContentId: '',
@@ -562,7 +566,8 @@ function AppContent() {
   const [editingSalon, setEditingSalon] = useState<SalonProfile | null>(null);
   const [newSalon, setNewSalon] = useState<Omit<SalonProfile, 'id'>>({
     name: '', hpUrl: '', hotpepperUrl: '', instagramUrl: '', otherUrls: [], notes: '',
-    commonContents: [], selectedAboveImageContentId: '', selectedBottomContentId: '',
+    commonContents: [], selectedTopContentId: '', selectedAboveImageContentId: '',
+    selectedBelowImageContentId: '', selectedBottomContentId: '',
     selectedInstaBottomContentId: '', selectedThreadsBottomContentId: ''
   });
   const [isFetchingUrls, setIsFetchingUrls] = useState(false);
@@ -671,12 +676,16 @@ function AppContent() {
     const getHtml = (id: string) => {
       const c = activeContents.find(x => x.id === id);
       if (!c) return '';
-      if (c.type === 'plain') return `<div style="margin:30px 0;padding:20px;background:#f9f9f9;border-radius:10px;border:1px solid #eee;text-align:center;color:#666;font-size:14px;line-height:1.8;">${c.content.replace(/\n/g, '<br>')}</div>`;
+      if (c.type === 'plain') return `<p style="margin:20px 0;line-height:1.9;">${c.content.replace(/\n/g, '<br>')}</p>`;
       return c.content;
     };
+    const topId = activeSalon?.selectedTopContentId || blogSettings.selectedTopContentId;
     const aboveId = activeSalon?.selectedAboveImageContentId || blogSettings.selectedAboveImageContentId;
+    const belowId = activeSalon?.selectedBelowImageContentId || blogSettings.selectedBelowImageContentId;
     const bottomId = activeSalon?.selectedBottomContentId || blogSettings.selectedBottomContentId;
+    const topHtml = getHtml(topId);
     const aboveHtml = getHtml(aboveId);
+    const belowHtml = getHtml(belowId);
     const bottomHtml = getHtml(bottomId);
     const imageHtml = post.imageUrl ? `<div style="margin:40px 0;"><img src="${post.imageUrl}" alt="${post.title}" style="width:100%;height:auto;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.1);"></div>` : '';
 
@@ -703,9 +712,11 @@ function AppContent() {
 </head>
 <body>
 <h1>${post.title}</h1>
+${topHtml}
 ${post.content}
 ${aboveHtml}
 ${imageHtml}
+${belowHtml}
 ${bottomHtml}
 </body>
 </html>`;
@@ -2171,14 +2182,17 @@ ${rawText}`;
           const threadsAcc = blogSettings.socialAccounts.find((a: SocialAccount) => a.platform === 'threads');
           const _activeSalon = blogSettings.salonProfiles.find(s => s.id === blogSettings.selectedSalonId);
           const _activeContents = (_activeSalon?.commonContents && _activeSalon.commonContents.length > 0) ? _activeSalon.commonContents : blogSettings.commonContents;
+          const _activeTopId = _activeSalon?.selectedTopContentId || blogSettings.selectedTopContentId;
+          const _activeAboveId = _activeSalon?.selectedAboveImageContentId || blogSettings.selectedAboveImageContentId;
+          const _activeBelowId = _activeSalon?.selectedBelowImageContentId || blogSettings.selectedBelowImageContentId;
           const _activeBottomId = _activeSalon?.selectedBottomContentId || blogSettings.selectedBottomContentId;
           const _activeInstaBottomId = _activeSalon?.selectedInstaBottomContentId || blogSettings.selectedInstaBottomContentId;
+          const toHtml = (c: CommonContent | undefined) => !c ? '' : c.type === 'plain' ? `<p style="margin:20px 0;line-height:1.9;">${c.content.replace(/\n/g, '<br>')}</p>` : c.content;
+          const topHtml = toHtml(_activeContents.find((c: CommonContent) => c.id === _activeTopId));
+          const aboveHtml = toHtml(_activeContents.find((c: CommonContent) => c.id === _activeAboveId));
+          const belowHtml = toHtml(_activeContents.find((c: CommonContent) => c.id === _activeBelowId));
           const bottomContent = _activeContents.find((c: CommonContent) => c.id === _activeBottomId);
-          const bottomHtml = bottomContent
-            ? (bottomContent.type === 'plain'
-                ? `<div style="margin:30px 0;padding:20px;background:#f9f9f9;border-radius:10px;border:1px solid #eee;text-align:center;color:#666;font-size:14px;line-height:1.8;">${bottomContent.content.replace(/\n/g, '<br>')}</div>`
-                : bottomContent.content)
-            : '';
+          const bottomHtml = toHtml(bottomContent);
           const instaCaption = (() => {
             let c = post.instaCaption || `${post.title}\n\n${post.metaDescription}`;
             const ic = _activeContents.find((cc: CommonContent) => cc.id === _activeInstaBottomId);
@@ -2197,6 +2211,9 @@ ${rawText}`;
             insta_caption: instaCaption,
             insta_hashtags: typeof post.instaHashtags === 'string' ? post.instaHashtags : (post.instaHashtags as string[] | undefined)?.join(' ') || null,
             threads_caption: post.threadsCaption || null,
+            top_content_html: topHtml || null,
+            above_image_html: aboveHtml || null,
+            below_image_html: belowHtml || null,
             bottom_content_html: bottomHtml || null,
             post_to_wp: hasWpDestination,
             post_to_instagram: hasInstaDestination,
@@ -2310,27 +2327,31 @@ ${rawText}`;
             // Get common contents (サロン独自設定 → なければグローバル)
             const _wpActiveSalon = blogSettings.salonProfiles.find(s => s.id === blogSettings.selectedSalonId);
             const _wpActiveContents = (_wpActiveSalon?.commonContents && _wpActiveSalon.commonContents.length > 0) ? _wpActiveSalon.commonContents : blogSettings.commonContents;
+            const _wpTopId = _wpActiveSalon?.selectedTopContentId || blogSettings.selectedTopContentId;
             const _wpAboveId = _wpActiveSalon?.selectedAboveImageContentId || blogSettings.selectedAboveImageContentId;
+            const _wpBelowId = _wpActiveSalon?.selectedBelowImageContentId || blogSettings.selectedBelowImageContentId;
             const _wpBottomId = _wpActiveSalon?.selectedBottomContentId || blogSettings.selectedBottomContentId;
             const getCommonHtml = (id: string) => {
               const content = _wpActiveContents.find(c => c.id === id);
               if (!content) return '';
-              if (content.type === 'plain') {
-                return `<div style="margin: 30px 0; padding: 20px; background: #f9f9f9; border-radius: 10px; border: 1px solid #eee; text-align: center; color: #666; font-size: 14px; line-height: 1.8;">${content.content.replace(/\n/g, '<br>')}</div>`;
-              }
+              if (content.type === 'plain') return `<p style="margin:20px 0;line-height:1.9;">${content.content.replace(/\n/g, '<br>')}</p>`;
               return content.content;
             };
 
+            const topHtml = getCommonHtml(_wpTopId);
             const aboveImageHtml = getCommonHtml(_wpAboveId);
+            const belowImageHtml = getCommonHtml(_wpBelowId);
             const bottomHtml = getCommonHtml(_wpBottomId);
 
             const imageHtml = `<div style="margin: 40px 0;">
       <img src="${uploadedImageUrl}" alt="${post.keywords.join(', ')}" style="width:100%; height:auto; border-radius:12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
     </div>`;
 
-            const finalContent = `${post.content.trim()}
+            const finalContent = `${topHtml}
+    ${post.content.trim()}
     ${aboveImageHtml}
     ${imageHtml}
+    ${belowImageHtml}
     ${bottomHtml}`;
             
             const postStatus = isImmediate ? 'publish' : 'future';
@@ -2656,13 +2677,16 @@ ${rawText}`;
 
       const _loopActiveSalon = blogSettings.salonProfiles.find(s => s.id === blogSettings.selectedSalonId);
       const _loopActiveContents = (_loopActiveSalon?.commonContents && _loopActiveSalon.commonContents.length > 0) ? _loopActiveSalon.commonContents : blogSettings.commonContents;
+      const _loopToHtml = (c: CommonContent | undefined) => !c ? '' : c.type === 'plain' ? `<p style="margin:20px 0;line-height:1.9;">${c.content.replace(/\n/g, '<br>')}</p>` : c.content;
+      const _loopTopId = _loopActiveSalon?.selectedTopContentId || blogSettings.selectedTopContentId;
+      const _loopAboveId = _loopActiveSalon?.selectedAboveImageContentId || blogSettings.selectedAboveImageContentId;
+      const _loopBelowId = _loopActiveSalon?.selectedBelowImageContentId || blogSettings.selectedBelowImageContentId;
       const _loopBottomId = _loopActiveSalon?.selectedBottomContentId || blogSettings.selectedBottomContentId;
+      const topHtmlLoop = _loopToHtml(_loopActiveContents.find((c: CommonContent) => c.id === _loopTopId));
+      const aboveHtmlLoop = _loopToHtml(_loopActiveContents.find((c: CommonContent) => c.id === _loopAboveId));
+      const belowHtmlLoop = _loopToHtml(_loopActiveContents.find((c: CommonContent) => c.id === _loopBelowId));
       const bottomContent = _loopActiveContents.find((c: CommonContent) => c.id === _loopBottomId);
-      const bottomHtml = bottomContent
-        ? (bottomContent.type === 'plain'
-            ? `<div style="margin: 30px 0; padding: 20px; background: #f9f9f9; border-radius: 10px; border: 1px solid #eee; text-align: center; color: #666; font-size: 14px; line-height: 1.8;">${bottomContent.content.replace(/\n/g, '<br>')}</div>`
-            : bottomContent.content)
-        : '';
+      const bottomHtml = _loopToHtml(bottomContent);
 
       // ループ初回時刻の計算
       let firstScheduledAt = post.scheduledAt;
@@ -2693,6 +2717,9 @@ ${rawText}`;
         insta_caption: post.instaCaption || null,
         insta_hashtags: typeof post.instaHashtags === 'string' ? post.instaHashtags : (post.instaHashtags as string[] | undefined)?.join(' ') || null,
         threads_caption: post.threadsCaption || null,
+        top_content_html: topHtmlLoop || null,
+        above_image_html: aboveHtmlLoop || null,
+        below_image_html: belowHtmlLoop || null,
         bottom_content_html: bottomHtml || null,
         post_to_wp: hasWp,
         post_to_instagram: hasInsta,
@@ -3212,61 +3239,45 @@ ${rawText}`;
                           </div>
 
                           <div className="space-y-3">
-                            <div className="space-y-1">
-                              <label className="text-[9px] text-black/40 font-bold">画像の上 (本文との間)</label>
-                              <select 
-                                value={blogSettings.selectedAboveImageContentId}
-                                onChange={(e) => setBlogSettings({...blogSettings, selectedAboveImageContentId: e.target.value})}
-                                className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-xs text-black/80 focus:outline-none focus:border-gold/50"
-                              >
-                                <option value="">なし</option>
-                                {blogSettings.commonContents.map(content => (
-                                  <option key={content.id} value={content.id}>{content.name}</option>
-                                ))}
-                              </select>
-                            </div>
+                            {[
+                              { key: 'selectedTopContentId', label: '記事の文頭 (WordPress)' },
+                              { key: 'selectedAboveImageContentId', label: '画像の前 (本文との間)' },
+                              { key: 'selectedBelowImageContentId', label: '画像の後' },
+                              { key: 'selectedBottomContentId', label: '記事の文末 (WordPress)' },
+                            ].map(({ key, label }) => (
+                              <div key={key} className="space-y-1">
+                                <label className="text-[9px] text-black/40 font-bold">{label}</label>
+                                <select
+                                  value={(blogSettings as any)[key]}
+                                  onChange={(e) => setBlogSettings({...blogSettings, [key]: e.target.value})}
+                                  className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-xs text-black/80 focus:outline-none focus:border-gold/50"
+                                >
+                                  <option value="">なし</option>
+                                  {blogSettings.commonContents.map(content => (
+                                    <option key={content.id} value={content.id}>{content.name}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            ))}
 
-                            <div className="space-y-1">
-                              <label className="text-[9px] text-black/40 font-bold">記事の最下部 (WordPress)</label>
-                              <select 
-                                value={blogSettings.selectedBottomContentId}
-                                onChange={(e) => setBlogSettings({...blogSettings, selectedBottomContentId: e.target.value})}
-                                className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-xs text-black/80 focus:outline-none focus:border-gold/50"
-                              >
-                                <option value="">なし</option>
-                                {blogSettings.commonContents.map(content => (
-                                  <option key={content.id} value={content.id}>{content.name}</option>
-                                ))}
-                              </select>
-                            </div>
-
-                            <div className="space-y-1">
-                              <label className="text-[9px] text-black/40 font-bold">記事の最下部 (Instagram)</label>
-                              <select 
-                                value={blogSettings.selectedInstaBottomContentId}
-                                onChange={(e) => setBlogSettings({...blogSettings, selectedInstaBottomContentId: e.target.value})}
-                                className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-xs text-black/80 focus:outline-none focus:border-gold/50"
-                              >
-                                <option value="">なし</option>
-                                {blogSettings.commonContents.map(content => (
-                                  <option key={content.id} value={content.id}>{content.name}</option>
-                                ))}
-                              </select>
-                            </div>
-
-                            <div className="space-y-1">
-                              <label className="text-[9px] text-black/40 font-bold">記事の最下部 (Threads)</label>
-                              <select 
-                                value={blogSettings.selectedThreadsBottomContentId}
-                                onChange={(e) => setBlogSettings({...blogSettings, selectedThreadsBottomContentId: e.target.value})}
-                                className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-xs text-black/80 focus:outline-none focus:border-gold/50"
-                              >
-                                <option value="">なし</option>
-                                {blogSettings.commonContents.map(content => (
-                                  <option key={content.id} value={content.id}>{content.name}</option>
-                                ))}
-                              </select>
-                            </div>
+                            {[
+                              { key: 'selectedInstaBottomContentId', label: '記事の文末 (Instagram)' },
+                              { key: 'selectedThreadsBottomContentId', label: '記事の文末 (Threads)' },
+                            ].map(({ key, label }) => (
+                              <div key={key} className="space-y-1">
+                                <label className="text-[9px] text-black/40 font-bold">{label}</label>
+                                <select
+                                  value={(blogSettings as any)[key]}
+                                  onChange={(e) => setBlogSettings({...blogSettings, [key]: e.target.value})}
+                                  className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-xs text-black/80 focus:outline-none focus:border-gold/50"
+                                >
+                                  <option value="">なし</option>
+                                  {blogSettings.commonContents.map(content => (
+                                    <option key={content.id} value={content.id}>{content.name}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            ))}
                           </div>
 
                           <AnimatePresence>
@@ -5522,10 +5533,12 @@ ${rawText}`;
                           <p className="text-[9px] text-black/30">設定するとグローバル設定より優先して使われます</p>
 
                           {[
-                            { key: 'selectedAboveImageContentId', label: '画像の上 (本文との間)' },
-                            { key: 'selectedBottomContentId', label: '記事の最下部 (WordPress)' },
-                            { key: 'selectedInstaBottomContentId', label: '記事の最下部 (Instagram)' },
-                            { key: 'selectedThreadsBottomContentId', label: '記事の最下部 (Threads)' },
+                            { key: 'selectedTopContentId', label: '記事の文頭 (WordPress)' },
+                            { key: 'selectedAboveImageContentId', label: '画像の前 (本文との間)' },
+                            { key: 'selectedBelowImageContentId', label: '画像の後' },
+                            { key: 'selectedBottomContentId', label: '記事の文末 (WordPress)' },
+                            { key: 'selectedInstaBottomContentId', label: '記事の文末 (Instagram)' },
+                            { key: 'selectedThreadsBottomContentId', label: '記事の文末 (Threads)' },
                           ].map(({ key, label }) => (
                             <div key={key} className="space-y-1">
                               <label className="text-[9px] text-black/40 font-bold">{label}</label>
@@ -5610,7 +5623,7 @@ ${rawText}`;
                                   ...blogSettings,
                                   salonProfiles: [...blogSettings.salonProfiles, { id, ...newSalon }]
                                 });
-                                setNewSalon({ name: '', hpUrl: '', hotpepperUrl: '', instagramUrl: '', otherUrls: [], notes: '', commonContents: [], selectedAboveImageContentId: '', selectedBottomContentId: '', selectedInstaBottomContentId: '', selectedThreadsBottomContentId: '' });
+                                setNewSalon({ name: '', hpUrl: '', hotpepperUrl: '', instagramUrl: '', otherUrls: [], notes: '', commonContents: [], selectedTopContentId: '', selectedAboveImageContentId: '', selectedBelowImageContentId: '', selectedBottomContentId: '', selectedInstaBottomContentId: '', selectedThreadsBottomContentId: '' });
                                 setNewSalonContent({ name: '', type: 'plain', content: '' });
                               }
                             }}
