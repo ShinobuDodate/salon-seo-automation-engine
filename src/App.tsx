@@ -717,6 +717,31 @@ ${imageHtml}
 </html>`;
   };
 
+  const computeSnsCaptions = (post: BlogPost): { insta: string; threads: string } => {
+    const activeSalon = blogSettings.salonProfiles.find(s => s.id === blogSettings.selectedSalonId);
+    const activeContents = (activeSalon?.commonContents && activeSalon.commonContents.length > 0) ? activeSalon.commonContents : blogSettings.commonContents;
+    const topId = activeSalon?.selectedTopContentId || blogSettings.selectedTopContentId;
+    const bottomId = activeSalon?.selectedInstaBottomContentId || blogSettings.selectedInstaBottomContentId;
+    const toText = (c: CommonContent | undefined) => !c ? '' : c.content.replace(/<[^>]*>/g, '').trim();
+    const snsTopText = toText(activeContents.find(c => c.id === topId));
+    const snsBottomText = toText(activeContents.find(c => c.id === bottomId));
+    const buildFull = (base: string) => {
+      if (!snsTopText && !snsBottomText) return base;
+      const lines = base.split('\n');
+      const firstLine = lines[0];
+      const rest = lines.slice(1).join('\n').trim();
+      let c = snsTopText
+        ? firstLine + '\n\n' + snsTopText + (rest ? '\n\n' + rest : '')
+        : base;
+      if (snsBottomText) c += '\n\n' + snsBottomText;
+      return c;
+    };
+    return {
+      insta: post.instaCaption ? buildFull(post.instaCaption) : '',
+      threads: post.threadsCaption ? buildFull(post.threadsCaption) : '',
+    };
+  };
+
   const importPosts = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -2185,7 +2210,13 @@ ${rawText}`;
           const snsTopText = toText(_activeContents.find((c: CommonContent) => c.id === _activeTopId));
           const snsBottomText = toText(_activeContents.find((c: CommonContent) => c.id === _activeSnsBottomId));
           const buildSnsCaption = (base: string) => {
-            let c = snsTopText ? snsTopText + '\n\n' + base : base;
+            if (!snsTopText && !snsBottomText) return base;
+            const lines = base.split('\n');
+            const firstLine = lines[0];
+            const rest = lines.slice(1).join('\n').trim();
+            let c = snsTopText
+              ? firstLine + '\n\n' + snsTopText + (rest ? '\n\n' + rest : '')
+              : base;
             if (snsBottomText) c += '\n\n' + snsBottomText;
             return c;
           };
@@ -2456,7 +2487,16 @@ ${rawText}`;
         const snsTopText = snsTopContent ? snsTopContent.content.replace(/<[^>]*>/g, '').trim() : '';
         const snsBottomContent = _snsActiveContents.find(c => c.id === _snsSnsBottomId);
         const snsBottomText = snsBottomContent ? '\n\n' + snsBottomContent.content.replace(/<[^>]*>/g, '').trim() : '';
-        const buildSnsText = (base: string) => (snsTopText ? snsTopText + '\n\n' + base : base) + snsBottomText;
+        const buildSnsText = (base: string) => {
+          if (!snsTopText && !snsBottomText) return base;
+          const lines = base.split('\n');
+          const firstLine = lines[0];
+          const rest = lines.slice(1).join('\n').trim();
+          let c = snsTopText
+            ? firstLine + '\n\n' + snsTopText + (rest ? '\n\n' + rest : '')
+            : base;
+          return c + snsBottomText;
+        };
 
         // Instagram（即時）
         if (hasInstaDestination && uploadedImageUrl) {
@@ -2672,7 +2712,13 @@ ${rawText}`;
       const _loopSnsTopText = _loopToText(_loopActiveContents.find((c: CommonContent) => c.id === _loopTopId));
       const _loopSnsBottomText = _loopToText(_loopActiveContents.find((c: CommonContent) => c.id === _loopSnsBottomId));
       const buildLoopSnsCaption = (base: string) => {
-        let c = _loopSnsTopText ? _loopSnsTopText + '\n\n' + base : base;
+        if (!_loopSnsTopText && !_loopSnsBottomText) return base;
+        const lines = base.split('\n');
+        const firstLine = lines[0];
+        const rest = lines.slice(1).join('\n').trim();
+        let c = _loopSnsTopText
+          ? firstLine + '\n\n' + _loopSnsTopText + (rest ? '\n\n' + rest : '')
+          : base;
         if (_loopSnsBottomText) c += '\n\n' + _loopSnsBottomText;
         return c;
       };
@@ -4592,10 +4638,11 @@ ${rawText}`;
                                             <ImageIcon size={8} />
                                             <span>保存</span>
                                           </button>
-                                          <button 
+                                          <button
                                             onClick={(e) => {
                                               e.stopPropagation();
-                                              const text = post.threadsCaption || post.instaCaption || '';
+                                              const computed = computeSnsCaptions(post);
+                                              const text = computed.threads || computed.insta || '';
                                               navigator.clipboard.writeText(text);
                                               setNotification({ message: 'SNS用文章をコピーしました！', type: 'success' });
                                             }}
@@ -4605,20 +4652,26 @@ ${rawText}`;
                                           </button>
                                         </div>
                                       </div>
-                                      <div className="space-y-2">
-                                        {post.instaCaption && (
-                                          <div className="space-y-1">
-                                            <p className="text-[7px] text-pink-500 font-bold uppercase tracking-tighter">Instagram</p>
-                                            <p className="text-[9px] text-black/60 leading-relaxed whitespace-pre-wrap">{post.instaCaption}</p>
+                                      {(() => {
+                                        const computed = computeSnsCaptions(post);
+                                        return (
+                                          <div className="space-y-2">
+                                            {computed.insta && (
+                                              <div className="space-y-1">
+                                                <p className="text-[7px] text-pink-500 font-bold uppercase tracking-tighter">Instagram</p>
+                                                <p className="text-[9px] text-black/60 leading-relaxed whitespace-pre-wrap">{computed.insta}</p>
+                                              </div>
+                                            )}
+                                            {computed.threads && (
+                                              <div className="space-y-1">
+                                                <p className="text-[7px] text-black font-bold uppercase tracking-tighter">Threads</p>
+                                                <p className="text-[9px] text-black/60 leading-relaxed whitespace-pre-wrap">{computed.threads}</p>
+                                              </div>
+                                            )}
                                           </div>
-                                        )}
-                                        {post.threadsCaption && (
-                                          <div className="space-y-1">
-                                            <p className="text-[7px] text-black font-bold uppercase tracking-tighter">Threads</p>
-                                            <p className="text-[9px] text-black/60 leading-relaxed whitespace-pre-wrap">{post.threadsCaption}</p>
-                                          </div>
-                                        )}
-                                      </div>
+                                        );
+                                      })()}
+
                                     </div>
                                   ) : (
                                     <button 
