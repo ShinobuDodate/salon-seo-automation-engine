@@ -402,6 +402,7 @@ function AppContent() {
 
   const [currentlyPostingId, setCurrentlyPostingId] = useState<string | null>(null);
   const [editingPost, setEditingPost] = useState<BlogPost | null>(null);
+  const [previewPost, setPreviewPost] = useState<BlogPost | null>(null);
   const [blogSettings, setBlogSettings] = useState(() => {
     const defaultSettings = {
       targetUrl: "https://do-date.com/web/",
@@ -662,6 +663,52 @@ function AppContent() {
     }
     setIsFetchingUrls(false);
     return context;
+  };
+
+  const buildPreviewHtml = (post: BlogPost): string => {
+    const activeSalon = blogSettings.salonProfiles.find(s => s.id === blogSettings.selectedSalonId);
+    const activeContents = (activeSalon?.commonContents && activeSalon.commonContents.length > 0) ? activeSalon.commonContents : blogSettings.commonContents;
+    const getHtml = (id: string) => {
+      const c = activeContents.find(x => x.id === id);
+      if (!c) return '';
+      if (c.type === 'plain') return `<div style="margin:30px 0;padding:20px;background:#f9f9f9;border-radius:10px;border:1px solid #eee;text-align:center;color:#666;font-size:14px;line-height:1.8;">${c.content.replace(/\n/g, '<br>')}</div>`;
+      return c.content;
+    };
+    const aboveId = activeSalon?.selectedAboveImageContentId || blogSettings.selectedAboveImageContentId;
+    const bottomId = activeSalon?.selectedBottomContentId || blogSettings.selectedBottomContentId;
+    const aboveHtml = getHtml(aboveId);
+    const bottomHtml = getHtml(bottomId);
+    const imageHtml = post.imageUrl ? `<div style="margin:40px 0;"><img src="${post.imageUrl}" alt="${post.title}" style="width:100%;height:auto;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.1);"></div>` : '';
+
+    return `<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body { font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif; max-width: 800px; margin: 0 auto; padding: 24px 20px 60px; line-height: 1.9; color: #333; font-size: 15px; }
+  h1 { font-size: 26px; font-weight: bold; line-height: 1.4; margin-bottom: 24px; color: #1a1a1a; }
+  h2 { font-size: 20px; font-weight: bold; margin: 36px 0 14px; padding-bottom: 8px; border-bottom: 2px solid #e8e8e8; color: #1a1a1a; }
+  h3 { font-size: 17px; font-weight: bold; margin: 28px 0 10px; color: #333; }
+  p { margin-bottom: 18px; }
+  ul, ol { margin: 0 0 18px; padding-left: 24px; }
+  li { margin-bottom: 6px; }
+  img { max-width: 100%; height: auto; }
+  a { color: #d4af37; }
+  strong { font-weight: bold; }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 18px; }
+  th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+  th { background: #f5f5f5; }
+</style>
+</head>
+<body>
+<h1>${post.title}</h1>
+${post.content}
+${aboveHtml}
+${imageHtml}
+${bottomHtml}
+</body>
+</html>`;
   };
 
   const importPosts = (e: ChangeEvent<HTMLInputElement>) => {
@@ -4757,7 +4804,14 @@ ${rawText}`;
                                   <CheckCircle size={10} />
                                   <span>本文コピー</span>
                                 </button>
-                                <button 
+                                <button
+                                  onClick={() => setPreviewPost(post)}
+                                  className="text-[10px] text-blue-400 hover:underline flex items-center space-x-1"
+                                >
+                                  <Eye size={10} />
+                                  <span>Webプレビュー</span>
+                                </button>
+                                <button
                                   onClick={() => setEditingPost(post)}
                                   className="text-[10px] text-gold hover:underline"
                                 >
@@ -5314,6 +5368,28 @@ ${rawText}`;
 
       {/* サロン管理モーダル */}
       <AnimatePresence>
+        {/* Webプレビューモーダル */}
+        {previewPost && (
+          <div className="fixed inset-0 z-[200] flex flex-col bg-black/80 backdrop-blur-sm">
+            <div className="flex items-center justify-between px-4 py-2 bg-white border-b border-black/10 flex-shrink-0">
+              <div className="flex items-center space-x-2">
+                <Eye size={14} className="text-blue-400" />
+                <span className="text-xs font-bold text-black/70">Webプレビュー</span>
+                <span className="text-[10px] text-black/30 truncate max-w-xs">{previewPost.title}</span>
+              </div>
+              <button onClick={() => setPreviewPost(null)} className="p-1 hover:bg-black/5 rounded-lg transition-colors">
+                <X size={18} className="text-black/40" />
+              </button>
+            </div>
+            <iframe
+              srcDoc={buildPreviewHtml(previewPost)}
+              className="flex-1 w-full bg-white"
+              sandbox="allow-same-origin"
+              title="記事プレビュー"
+            />
+          </div>
+        )}
+
         {showSalonManager && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <motion.div
