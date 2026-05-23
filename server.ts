@@ -235,7 +235,9 @@ async function processScheduledPost(post: any) {
 
     // 2. Instagram
     if (post.post_to_instagram && post.instagram_account_id && post.instagram_access_token && imageUrl) {
-      const caption = `${post.insta_caption || post.title}\n${post.insta_hashtags || ''}`.trim();
+      const caption = post.insta_hashtags
+        ? `${post.insta_caption || post.title}\n\n${post.insta_hashtags}`.trim()
+        : (post.insta_caption || post.title).trim();
       const r = await publishToInstagram(imageUrl, caption, post.instagram_account_id, post.instagram_access_token);
       if (r.success) instagramPostId = r.postId;
       else errors.push(`Instagram: ${r.error}`);

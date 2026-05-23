@@ -725,9 +725,11 @@ ${imageHtml}
     const toText = (c: CommonContent | undefined) => !c ? '' : c.content.replace(/<[^>]*>/g, '').trim();
     const snsTopText = toText(activeContents.find(c => c.id === topId));
     const snsBottomText = toText(activeContents.find(c => c.id === bottomId));
-    // Instagram: タイトル行（1行目）の後に文頭を挿入
+    const hashtags = typeof post.instaHashtags === 'string'
+      ? post.instaHashtags
+      : (post.instaHashtags as string[] | undefined)?.join(' ') || '';
+    // Instagram: タイトル行（1行目）の後に文頭、本文の後に文末、最後にハッシュタグ
     const buildInsta = (base: string) => {
-      if (!snsTopText && !snsBottomText) return base;
       const nlIdx = base.indexOf('\n');
       const firstLine = nlIdx >= 0 ? base.substring(0, nlIdx) : base;
       const rest = nlIdx >= 0 ? base.substring(nlIdx).trim() : '';
@@ -735,6 +737,7 @@ ${imageHtml}
         ? firstLine + '\n\n' + snsTopText + (rest ? '\n\n' + rest : '')
         : base;
       if (snsBottomText) c += '\n\n' + snsBottomText;
+      if (hashtags) c += '\n\n' + hashtags;
       return c;
     };
     // Threads: 文頭を本文の前、文末を本文の後
@@ -2499,13 +2502,17 @@ ${rawText}`;
         const snsTopText = snsTopContent ? snsTopContent.content.replace(/<[^>]*>/g, '').trim() : '';
         const snsBottomContent = _snsActiveContents.find(c => c.id === _snsSnsBottomId);
         const snsBottomText = snsBottomContent ? '\n\n' + snsBottomContent.content.replace(/<[^>]*>/g, '').trim() : '';
+        const _snsHashtags = typeof post.instaHashtags === 'string'
+          ? post.instaHashtags
+          : (post.instaHashtags as string[] | undefined)?.join(' ') || '';
         const buildInstaText = (base: string) => {
-          if (!snsTopText && !snsBottomText) return base;
           const nlIdx = base.indexOf('\n');
           const firstLine = nlIdx >= 0 ? base.substring(0, nlIdx) : base;
           const rest = nlIdx >= 0 ? base.substring(nlIdx).trim() : '';
           let c = snsTopText ? firstLine + '\n\n' + snsTopText + (rest ? '\n\n' + rest : '') : base;
-          return c + snsBottomText;
+          if (snsBottomText) c += snsBottomText;
+          if (_snsHashtags) c += '\n\n' + _snsHashtags;
+          return c;
         };
         const buildThreadsText = (base: string) => {
           if (!snsTopText && !snsBottomText) return base;
