@@ -681,12 +681,8 @@ function AppContent() {
     };
     const topId = activeSalon?.selectedTopContentId || blogSettings.selectedTopContentId;
     const aboveId = activeSalon?.selectedAboveImageContentId || blogSettings.selectedAboveImageContentId;
-    const belowId = activeSalon?.selectedBelowImageContentId || blogSettings.selectedBelowImageContentId;
-    const bottomId = activeSalon?.selectedBottomContentId || blogSettings.selectedBottomContentId;
     const topHtml = getHtml(topId);
     const aboveHtml = getHtml(aboveId);
-    const belowHtml = getHtml(belowId);
-    const bottomHtml = getHtml(bottomId);
     const imageHtml = post.imageUrl ? `<div style="margin:40px 0;"><img src="${post.imageUrl}" alt="${post.title}" style="width:100%;height:auto;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.1);"></div>` : '';
 
     return `<!DOCTYPE html>
@@ -711,13 +707,10 @@ function AppContent() {
 </style>
 </head>
 <body>
-<h1>${post.title}</h1>
 ${topHtml}
 ${post.content}
 ${aboveHtml}
 ${imageHtml}
-${belowHtml}
-${bottomHtml}
 </body>
 </html>`;
   };
@@ -1054,8 +1047,7 @@ ${rawText}`;
       1. 読者の目を引く、親しみやすく魅力的なキャプション（instaCaption）を作成してください。**ハッシュタグは絶対に含めないでください。**
       2. 適度に絵文字を使用し、スマホで読みやすいように改行を多用してください。
       3. 記事の内容を3つのポイントで要約してください。
-      4. 最後に「詳細はプロフィールのリンクからブログをチェック！」というCTAを入れてください。
-      5. 関連性の高いハッシュタグ（instaHashtags）を30個程度、スペース区切りで作成してください。
+      4. 関連性の高いハッシュタグ（instaHashtags）を30個程度、スペース区切りで作成してください。
 
       【執筆ルール - Threads（threadsCaption）】
       ⚠️【最重要・絶対厳守】以下のルールを必ず守ること。違反した場合はやり直し。
@@ -1326,8 +1318,7 @@ ${rawText}`;
       2. Threads用（threadsCaption）: より会話調で、短く、意見や問いかけを含む内容。**ハッシュタグは絶対に含めないでください。**
       3. 共通: スマホで読みやすいように改行を多用。
       4. 共通: 記事の内容を3つのポイントで要約。
-      5. 共通: 最後に「詳細はプロフィールのリンクからブログをチェック！」というCTA。
-      6. ハッシュタグ（instaHashtags）: 関連性の高いハッシュタグを30個程度、必ず「#」記号を付けて、スペース区切りで作成してください。
+      5. ハッシュタグ（instaHashtags）: 関連性の高いハッシュタグを30個程度、必ず「#」記号を付けて、スペース区切りで作成してください。
 
       出力形式: JSON形式 { "instaCaption": "...", "threadsCaption": "...", "instaHashtags": "..." }`;
 
@@ -2184,21 +2175,20 @@ ${rawText}`;
           const _activeContents = (_activeSalon?.commonContents && _activeSalon.commonContents.length > 0) ? _activeSalon.commonContents : blogSettings.commonContents;
           const _activeTopId = _activeSalon?.selectedTopContentId || blogSettings.selectedTopContentId;
           const _activeAboveId = _activeSalon?.selectedAboveImageContentId || blogSettings.selectedAboveImageContentId;
-          const _activeBelowId = _activeSalon?.selectedBelowImageContentId || blogSettings.selectedBelowImageContentId;
-          const _activeBottomId = _activeSalon?.selectedBottomContentId || blogSettings.selectedBottomContentId;
-          const _activeInstaBottomId = _activeSalon?.selectedInstaBottomContentId || blogSettings.selectedInstaBottomContentId;
+          const _activeSnsBottomId = _activeSalon?.selectedInstaBottomContentId || blogSettings.selectedInstaBottomContentId;
           const toHtml = (c: CommonContent | undefined) => !c ? '' : c.type === 'plain' ? `<p style="margin:20px 0;line-height:1.9;">${c.content.replace(/\n/g, '<br>')}</p>` : c.content;
           const topHtml = toHtml(_activeContents.find((c: CommonContent) => c.id === _activeTopId));
           const aboveHtml = toHtml(_activeContents.find((c: CommonContent) => c.id === _activeAboveId));
-          const belowHtml = toHtml(_activeContents.find((c: CommonContent) => c.id === _activeBelowId));
-          const bottomContent = _activeContents.find((c: CommonContent) => c.id === _activeBottomId);
-          const bottomHtml = toHtml(bottomContent);
-          const instaCaption = (() => {
-            let c = post.instaCaption || `${post.title}\n\n${post.metaDescription}`;
-            const ic = _activeContents.find((cc: CommonContent) => cc.id === _activeInstaBottomId);
-            if (ic) c += '\n\n' + ic.content.replace(/<[^>]*>/g, '').trim();
+          const toText = (c: CommonContent | undefined) => !c ? '' : c.content.replace(/<[^>]*>/g, '').trim();
+          const snsTopText = toText(_activeContents.find((c: CommonContent) => c.id === _activeTopId));
+          const snsBottomText = toText(_activeContents.find((c: CommonContent) => c.id === _activeSnsBottomId));
+          const buildSnsCaption = (base: string) => {
+            let c = snsTopText ? snsTopText + '\n\n' + base : base;
+            if (snsBottomText) c += '\n\n' + snsBottomText;
             return c;
-          })();
+          };
+          const instaCaption = buildSnsCaption(post.instaCaption || `${post.title}\n\n${post.metaDescription}`);
+          const threadsCaptionFinal = buildSnsCaption(post.threadsCaption || `${post.title}\n\n${post.metaDescription}`);
 
           const payload = {
             scheduled_at: post.scheduledAt,
@@ -2210,11 +2200,9 @@ ${rawText}`;
             keywords: post.keywords || [],
             insta_caption: instaCaption,
             insta_hashtags: typeof post.instaHashtags === 'string' ? post.instaHashtags : (post.instaHashtags as string[] | undefined)?.join(' ') || null,
-            threads_caption: post.threadsCaption || null,
+            threads_caption: threadsCaptionFinal,
             top_content_html: topHtml || null,
             above_image_html: aboveHtml || null,
-            below_image_html: belowHtml || null,
-            bottom_content_html: bottomHtml || null,
             post_to_wp: hasWpDestination,
             post_to_instagram: hasInstaDestination,
             post_to_instagram_story: hasStoryDestination,
@@ -2329,8 +2317,6 @@ ${rawText}`;
             const _wpActiveContents = (_wpActiveSalon?.commonContents && _wpActiveSalon.commonContents.length > 0) ? _wpActiveSalon.commonContents : blogSettings.commonContents;
             const _wpTopId = _wpActiveSalon?.selectedTopContentId || blogSettings.selectedTopContentId;
             const _wpAboveId = _wpActiveSalon?.selectedAboveImageContentId || blogSettings.selectedAboveImageContentId;
-            const _wpBelowId = _wpActiveSalon?.selectedBelowImageContentId || blogSettings.selectedBelowImageContentId;
-            const _wpBottomId = _wpActiveSalon?.selectedBottomContentId || blogSettings.selectedBottomContentId;
             const getCommonHtml = (id: string) => {
               const content = _wpActiveContents.find(c => c.id === id);
               if (!content) return '';
@@ -2340,8 +2326,6 @@ ${rawText}`;
 
             const topHtml = getCommonHtml(_wpTopId);
             const aboveImageHtml = getCommonHtml(_wpAboveId);
-            const belowImageHtml = getCommonHtml(_wpBelowId);
-            const bottomHtml = getCommonHtml(_wpBottomId);
 
             const imageHtml = `<div style="margin: 40px 0;">
       <img src="${uploadedImageUrl}" alt="${post.keywords.join(', ')}" style="width:100%; height:auto; border-radius:12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
@@ -2350,9 +2334,7 @@ ${rawText}`;
             const finalContent = `${topHtml}
     ${post.content.trim()}
     ${aboveImageHtml}
-    ${imageHtml}
-    ${belowImageHtml}
-    ${bottomHtml}`;
+    ${imageHtml}`;
             
             const postStatus = isImmediate ? 'publish' : 'future';
             const formatWPDate = (isoString: string) => isoString.split('.')[0].replace('Z', '');
@@ -2463,19 +2445,18 @@ ${rawText}`;
 
         const _snsActiveSalon = blogSettings.salonProfiles.find(s => s.id === blogSettings.selectedSalonId);
         const _snsActiveContents = (_snsActiveSalon?.commonContents && _snsActiveSalon.commonContents.length > 0) ? _snsActiveSalon.commonContents : blogSettings.commonContents;
-        const _snsInstaBottomId = _snsActiveSalon?.selectedInstaBottomContentId || blogSettings.selectedInstaBottomContentId;
-        const _snsThreadsBottomId = _snsActiveSalon?.selectedThreadsBottomContentId || blogSettings.selectedThreadsBottomContentId;
-        const getCommonText = (id: string) => {
-          const content = _snsActiveContents.find(c => c.id === id);
-          if (!content) return '';
-          return '\n\n' + content.content.replace(/<[^>]*>/g, '').trim();
-        };
+        const _snsSnsTopId = _snsActiveSalon?.selectedTopContentId || blogSettings.selectedTopContentId;
+        const _snsSnsBottomId = _snsActiveSalon?.selectedInstaBottomContentId || blogSettings.selectedInstaBottomContentId;
+        const snsTopContent = _snsActiveContents.find(c => c.id === _snsSnsTopId);
+        const snsTopText = snsTopContent ? snsTopContent.content.replace(/<[^>]*>/g, '').trim() : '';
+        const snsBottomContent = _snsActiveContents.find(c => c.id === _snsSnsBottomId);
+        const snsBottomText = snsBottomContent ? '\n\n' + snsBottomContent.content.replace(/<[^>]*>/g, '').trim() : '';
+        const buildSnsText = (base: string) => (snsTopText ? snsTopText + '\n\n' + base : base) + snsBottomText;
 
         // Instagram（即時）
         if (hasInstaDestination && uploadedImageUrl) {
           setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, postingMessage: 'Instagramに投稿中...' } : p));
-          let instaCaption = post.instaCaption || `${post.title}\n\n${post.metaDescription}`;
-          instaCaption += getCommonText(_snsInstaBottomId);
+          const instaCaption = buildSnsText(post.instaCaption || `${post.title}\n\n${post.metaDescription}`);
 
           const instaAccounts = blogSettings.socialAccounts.filter((a: SocialAccount) => a.platform === 'instagram');
           if (instaAccounts.length > 0) {
@@ -2509,8 +2490,7 @@ ${rawText}`;
         // Threads（即時）
         if (hasThreadsDestination) {
           setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, postingMessage: 'Threadsに投稿中...' } : p));
-          let threadsCaption = post.threadsCaption || `${post.title}\n\n${post.metaDescription}`;
-          threadsCaption += getCommonText(_snsThreadsBottomId);
+          const threadsCaption = buildSnsText(post.threadsCaption || `${post.title}\n\n${post.metaDescription}`);
 
           const threadsAccounts = blogSettings.socialAccounts.filter((a: SocialAccount) => a.platform === 'threads');
           for (const acc of threadsAccounts) {
@@ -2678,15 +2658,19 @@ ${rawText}`;
       const _loopActiveSalon = blogSettings.salonProfiles.find(s => s.id === blogSettings.selectedSalonId);
       const _loopActiveContents = (_loopActiveSalon?.commonContents && _loopActiveSalon.commonContents.length > 0) ? _loopActiveSalon.commonContents : blogSettings.commonContents;
       const _loopToHtml = (c: CommonContent | undefined) => !c ? '' : c.type === 'plain' ? `<p style="margin:20px 0;line-height:1.9;">${c.content.replace(/\n/g, '<br>')}</p>` : c.content;
+      const _loopToText = (c: CommonContent | undefined) => !c ? '' : c.content.replace(/<[^>]*>/g, '').trim();
       const _loopTopId = _loopActiveSalon?.selectedTopContentId || blogSettings.selectedTopContentId;
       const _loopAboveId = _loopActiveSalon?.selectedAboveImageContentId || blogSettings.selectedAboveImageContentId;
-      const _loopBelowId = _loopActiveSalon?.selectedBelowImageContentId || blogSettings.selectedBelowImageContentId;
-      const _loopBottomId = _loopActiveSalon?.selectedBottomContentId || blogSettings.selectedBottomContentId;
+      const _loopSnsBottomId = _loopActiveSalon?.selectedInstaBottomContentId || blogSettings.selectedInstaBottomContentId;
       const topHtmlLoop = _loopToHtml(_loopActiveContents.find((c: CommonContent) => c.id === _loopTopId));
       const aboveHtmlLoop = _loopToHtml(_loopActiveContents.find((c: CommonContent) => c.id === _loopAboveId));
-      const belowHtmlLoop = _loopToHtml(_loopActiveContents.find((c: CommonContent) => c.id === _loopBelowId));
-      const bottomContent = _loopActiveContents.find((c: CommonContent) => c.id === _loopBottomId);
-      const bottomHtml = _loopToHtml(bottomContent);
+      const _loopSnsTopText = _loopToText(_loopActiveContents.find((c: CommonContent) => c.id === _loopTopId));
+      const _loopSnsBottomText = _loopToText(_loopActiveContents.find((c: CommonContent) => c.id === _loopSnsBottomId));
+      const buildLoopSnsCaption = (base: string) => {
+        let c = _loopSnsTopText ? _loopSnsTopText + '\n\n' + base : base;
+        if (_loopSnsBottomText) c += '\n\n' + _loopSnsBottomText;
+        return c;
+      };
 
       // ループ初回時刻の計算
       let firstScheduledAt = post.scheduledAt;
@@ -2714,13 +2698,11 @@ ${rawText}`;
         image_url: (post.imageUrl && !post.imageUrl.startsWith('data:')) ? post.imageUrl : null,
         image_base64: (post.imageUrl && post.imageUrl.startsWith('data:')) ? post.imageUrl.split(',')[1] : null,
         keywords: post.keywords || [],
-        insta_caption: post.instaCaption || null,
+        insta_caption: buildLoopSnsCaption(post.instaCaption || `${post.title}\n\n${post.metaDescription}`),
         insta_hashtags: typeof post.instaHashtags === 'string' ? post.instaHashtags : (post.instaHashtags as string[] | undefined)?.join(' ') || null,
-        threads_caption: post.threadsCaption || null,
+        threads_caption: buildLoopSnsCaption(post.threadsCaption || `${post.title}\n\n${post.metaDescription}`),
         top_content_html: topHtmlLoop || null,
         above_image_html: aboveHtmlLoop || null,
-        below_image_html: belowHtmlLoop || null,
-        bottom_content_html: bottomHtml || null,
         post_to_wp: hasWp,
         post_to_instagram: hasInsta,
         post_to_instagram_story: hasStory,
@@ -3240,29 +3222,9 @@ ${rawText}`;
 
                           <div className="space-y-3">
                             {[
-                              { key: 'selectedTopContentId', label: '記事の文頭 (WordPress)' },
-                              { key: 'selectedAboveImageContentId', label: '画像の前 (本文との間)' },
-                              { key: 'selectedBelowImageContentId', label: '画像の後' },
-                              { key: 'selectedBottomContentId', label: '記事の文末 (WordPress)' },
-                            ].map(({ key, label }) => (
-                              <div key={key} className="space-y-1">
-                                <label className="text-[9px] text-black/40 font-bold">{label}</label>
-                                <select
-                                  value={(blogSettings as any)[key]}
-                                  onChange={(e) => setBlogSettings({...blogSettings, [key]: e.target.value})}
-                                  className="w-full bg-white border border-black/10 rounded-lg px-3 py-2 text-xs text-black/80 focus:outline-none focus:border-gold/50"
-                                >
-                                  <option value="">なし</option>
-                                  {blogSettings.commonContents.map(content => (
-                                    <option key={content.id} value={content.id}>{content.name}</option>
-                                  ))}
-                                </select>
-                              </div>
-                            ))}
-
-                            {[
-                              { key: 'selectedInstaBottomContentId', label: '記事の文末 (Instagram)' },
-                              { key: 'selectedThreadsBottomContentId', label: '記事の文末 (Threads)' },
+                              { key: 'selectedTopContentId', label: '文頭（共通・全媒体）' },
+                              { key: 'selectedAboveImageContentId', label: '画像前（WordPress・文末）' },
+                              { key: 'selectedInstaBottomContentId', label: '文末（SNSのみ）' },
                             ].map(({ key, label }) => (
                               <div key={key} className="space-y-1">
                                 <label className="text-[9px] text-black/40 font-bold">{label}</label>
@@ -5533,12 +5495,9 @@ ${rawText}`;
                           <p className="text-[9px] text-black/30">設定するとグローバル設定より優先して使われます</p>
 
                           {[
-                            { key: 'selectedTopContentId', label: '記事の文頭 (WordPress)' },
-                            { key: 'selectedAboveImageContentId', label: '画像の前 (本文との間)' },
-                            { key: 'selectedBelowImageContentId', label: '画像の後' },
-                            { key: 'selectedBottomContentId', label: '記事の文末 (WordPress)' },
-                            { key: 'selectedInstaBottomContentId', label: '記事の文末 (Instagram)' },
-                            { key: 'selectedThreadsBottomContentId', label: '記事の文末 (Threads)' },
+                            { key: 'selectedTopContentId', label: '文頭（共通・全媒体）' },
+                            { key: 'selectedAboveImageContentId', label: '画像前（WordPress・文末）' },
+                            { key: 'selectedInstaBottomContentId', label: '文末（SNSのみ）' },
                           ].map(({ key, label }) => (
                             <div key={key} className="space-y-1">
                               <label className="text-[9px] text-black/40 font-bold">{label}</label>
