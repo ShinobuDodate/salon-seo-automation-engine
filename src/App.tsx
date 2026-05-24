@@ -405,6 +405,7 @@ function AppContent() {
   const [currentlyPostingId, setCurrentlyPostingId] = useState<string | null>(null);
   const [editingPost, setEditingPost] = useState<BlogPost | null>(null);
   const [previewPost, setPreviewPost] = useState<BlogPost | null>(null);
+  const [uploadInputKey, setUploadInputKey] = useState(0);
   const [blogSettings, setBlogSettings] = useState(() => {
     const defaultSettings = {
       targetUrl: "https://do-date.com/web/",
@@ -912,6 +913,7 @@ ${rawText}`;
       // 単発生成時も生成開始前にuploadedImagesをクリア（OOM防止）
       if (blogSettings.uploadedImages.length > 0 && !customImage) {
         setBlogSettings(prev => ({ ...prev, uploadedImages: [] }));
+        setUploadInputKey(k => k + 1);
       }
     }
 
@@ -1471,6 +1473,7 @@ ${rawText}`;
       const uploadedImagesCopy = [...blogSettings.uploadedImages];
       if (uploadedImagesCopy.length > 0) {
         setBlogSettings(prev => ({ ...prev, uploadedImages: [] }));
+        setUploadInputKey(k => k + 1);
       }
 
       for (const v of variations) {
@@ -3529,8 +3532,9 @@ ${rawText}`;
                             <span className="text-[9px] text-black/40 font-bold uppercase tracking-widest">
                               画像を追加
                             </span>
-                            <input 
-                              type="file" 
+                            <input
+                              key={uploadInputKey}
+                              type="file"
                               accept="image/*"
                               multiple
                               className="hidden"
