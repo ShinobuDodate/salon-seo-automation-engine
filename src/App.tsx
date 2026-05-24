@@ -4185,19 +4185,23 @@ ${rawText}`;
                                       : [...blogSettings.destinations, id];
                                     setBlogSettings({ ...blogSettings, destinations: newDest });
                                   }}
-                                  className={`rounded-xl border-2 flex flex-col items-center justify-center py-4 gap-1.5 transition-all ${
-                                    isSelected
-                                      ? 'bg-gold/10 border-gold text-gold'
-                                      : 'bg-white border-black/10 text-black/30 hover:border-black/20 hover:text-black/50'
-                                  }`}
+                                  className="rounded-xl flex flex-col items-center justify-center py-4 gap-1.5 transition-all focus:outline-none"
+                                  style={isSelected
+                                    ? { background: 'rgba(197,160,89,0.12)', border: '2px solid #c5a059', color: '#c5a059' }
+                                    : { background: '#fff', border: '2px solid rgba(0,0,0,0.1)', color: 'rgba(0,0,0,0.3)' }
+                                  }
                                 >
                                   {icon}
                                   <span className="text-[10px] font-bold tracking-wide">{label}</span>
                                   <span className="text-[8px] opacity-60">{sub}</span>
-                                  <div className={`w-4 h-4 rounded-full flex items-center justify-center border-2 transition-all ${
-                                    isSelected ? 'bg-gold border-gold' : 'border-black/15 bg-white'
-                                  }`}>
-                                    {isSelected && <span className="text-white text-[8px] font-black leading-none">✓</span>}
+                                  <div
+                                    className="w-4 h-4 rounded-full flex items-center justify-center transition-all"
+                                    style={isSelected
+                                      ? { background: '#c5a059', border: '2px solid #c5a059' }
+                                      : { background: '#fff', border: '2px solid rgba(0,0,0,0.15)' }
+                                    }
+                                  >
+                                    {isSelected && <span style={{ color: '#fff', fontSize: '8px', fontWeight: 900, lineHeight: 1 }}>✓</span>}
                                   </div>
                                 </button>
                               );
