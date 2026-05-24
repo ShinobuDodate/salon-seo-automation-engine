@@ -4088,24 +4088,20 @@ ${rawText}`;
                           投稿先の選択
                         </label>
 
-                        {/* 3カラム: HP / Instagram / Threads */}
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="space-y-2">
 
-                          {/* HP カラム */}
+                          {/* HP行（全幅） */}
                           <div className="rounded-xl border border-black/10 overflow-hidden">
                             <div className="flex items-center space-x-1.5 px-3 py-2 bg-black/5">
                               <Globe size={12} className="text-black/40" />
-                              <span className="text-[10px] font-bold text-black/50 uppercase tracking-widest">HP</span>
+                              <span className="text-[10px] font-bold text-black/50 uppercase tracking-widest">HP（WordPress）</span>
                             </div>
-
-                            {/* サイト一覧（アコーディオン） */}
                             <div className="divide-y divide-black/5">
                               {blogSettings.wpSites.map(site => {
                                 const isExpanded = expandedWpSiteId === site.id;
                                 const isActive = blogSettings.selectedWpSiteId === site.id;
                                 return (
                                   <div key={site.id}>
-                                    {/* サイト名ヘッダー */}
                                     <button
                                       onClick={() => {
                                         const next = isExpanded ? '' : site.id;
@@ -4128,8 +4124,6 @@ ${rawText}`;
                                       <span className="truncate">{site.name}</span>
                                       <ChevronDown size={10} className={`flex-shrink-0 ml-1 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                                     </button>
-
-                                    {/* 展開時：投稿種別チェック */}
                                     {isExpanded && (
                                       <div className="px-3 pb-3 space-y-1.5 bg-gold/3">
                                         {[
@@ -4152,8 +4146,8 @@ ${rawText}`;
                                                   : 'bg-white border-black/10 text-black/40 hover:bg-black/5'
                                               }`}
                                             >
-                                              <div className={`w-3 h-3 rounded flex items-center justify-center flex-shrink-0 border ${isSelected ? 'bg-gold border-gold' : 'border-black/20 bg-white'}`}>
-                                                {isSelected && <span className="text-white text-[7px] font-black">✓</span>}
+                                              <div className={`w-3.5 h-3.5 rounded flex items-center justify-center flex-shrink-0 border-2 transition-all ${isSelected ? 'bg-gold border-gold' : 'border-black/20 bg-white'}`}>
+                                                {isSelected && <span className="text-white text-[7px] font-black leading-none">✓</span>}
                                               </div>
                                               <span>{dest.label}</span>
                                             </button>
@@ -4165,8 +4159,6 @@ ${rawText}`;
                                 );
                               })}
                             </div>
-
-                            {/* サイトを追加ボタン */}
                             <button
                               onClick={() => setShowAddWpSiteForm(true)}
                               className="w-full flex items-center justify-center space-x-1 py-2 text-[9px] text-black/30 hover:text-gold transition-colors border-t border-black/5"
@@ -4176,83 +4168,41 @@ ${rawText}`;
                             </button>
                           </div>
 
-                          {/* Instagram カラム */}
-                          {(() => {
-                            const isSelected = blogSettings.destinations.includes('instagram');
-                            return (
-                              <button
-                                onClick={() => {
-                                  const newDest = isSelected
-                                    ? blogSettings.destinations.filter(d => d !== 'instagram')
-                                    : [...blogSettings.destinations, 'instagram'];
-                                  setBlogSettings({ ...blogSettings, destinations: newDest });
-                                }}
-                                className={`rounded-xl border flex flex-col items-center justify-center py-4 space-y-2 transition-all ${
-                                  isSelected
-                                    ? 'bg-gold/10 border-gold/40 text-gold'
-                                    : 'bg-black/5 border-black/10 text-black/40 hover:bg-black/10'
-                                }`}
-                              >
-                                <Instagram size={18} />
-                                <span className="text-[10px] font-bold uppercase tracking-widest">Instagram</span>
-                                <div className={`w-4 h-4 rounded flex items-center justify-center border ${isSelected ? 'bg-gold border-gold' : 'border-black/20 bg-white'}`}>
-                                  {isSelected && <span className="text-white text-[8px] font-black">✓</span>}
-                                </div>
-                              </button>
-                            );
-                          })()}
-
-                          {/* Instagram ストーリーズ カラム */}
-                          {(() => {
-                            const isSelected = blogSettings.destinations.includes('instagram_story');
-                            return (
-                              <button
-                                onClick={() => {
-                                  const newDest = isSelected
-                                    ? blogSettings.destinations.filter(d => d !== 'instagram_story')
-                                    : [...blogSettings.destinations, 'instagram_story'];
-                                  setBlogSettings({ ...blogSettings, destinations: newDest });
-                                }}
-                                className={`rounded-xl border flex flex-col items-center justify-center py-4 space-y-2 transition-all ${
-                                  isSelected
-                                    ? 'bg-pink-500/10 border-pink-400/40 text-pink-500'
-                                    : 'bg-black/5 border-black/10 text-black/40 hover:bg-black/10'
-                                }`}
-                              >
-                                <Instagram size={18} />
-                                <span className="text-[10px] font-bold uppercase tracking-widest">Story</span>
-                                <div className={`w-4 h-4 rounded flex items-center justify-center border ${isSelected ? 'bg-pink-500 border-pink-500' : 'border-black/20 bg-white'}`}>
-                                  {isSelected && <span className="text-white text-[8px] font-black">✓</span>}
-                                </div>
-                              </button>
-                            );
-                          })()}
-
-                          {/* Threads カラム */}
-                          {(() => {
-                            const isSelected = blogSettings.destinations.includes('threads');
-                            return (
-                              <button
-                                onClick={() => {
-                                  const newDest = isSelected
-                                    ? blogSettings.destinations.filter(d => d !== 'threads')
-                                    : [...blogSettings.destinations, 'threads'];
-                                  setBlogSettings({ ...blogSettings, destinations: newDest });
-                                }}
-                                className={`rounded-xl border flex flex-col items-center justify-center py-4 space-y-2 transition-all ${
-                                  isSelected
-                                    ? 'bg-gold/10 border-gold/40 text-gold'
-                                    : 'bg-black/5 border-black/10 text-black/40 hover:bg-black/10'
-                                }`}
-                              >
-                                <Share2 size={18} />
-                                <span className="text-[10px] font-bold uppercase tracking-widest">Threads</span>
-                                <div className={`w-4 h-4 rounded flex items-center justify-center border ${isSelected ? 'bg-gold border-gold' : 'border-black/20 bg-white'}`}>
-                                  {isSelected && <span className="text-white text-[8px] font-black">✓</span>}
-                                </div>
-                              </button>
-                            );
-                          })()}
+                          {/* SNS行（3等分） */}
+                          <div className="grid grid-cols-3 gap-2">
+                            {[
+                              { id: 'instagram', icon: <Instagram size={20} />, label: 'Instagram', sub: 'フィード' },
+                              { id: 'instagram_story', icon: <Instagram size={20} />, label: 'ストーリー', sub: 'Story' },
+                              { id: 'threads', icon: <Share2 size={20} />, label: 'Threads', sub: 'スレッズ' },
+                            ].map(({ id, icon, label, sub }) => {
+                              const isSelected = blogSettings.destinations.includes(id);
+                              return (
+                                <button
+                                  key={id}
+                                  onClick={() => {
+                                    const newDest = isSelected
+                                      ? blogSettings.destinations.filter(d => d !== id)
+                                      : [...blogSettings.destinations, id];
+                                    setBlogSettings({ ...blogSettings, destinations: newDest });
+                                  }}
+                                  className={`rounded-xl border-2 flex flex-col items-center justify-center py-4 gap-1.5 transition-all ${
+                                    isSelected
+                                      ? 'bg-gold/10 border-gold text-gold'
+                                      : 'bg-white border-black/10 text-black/30 hover:border-black/20 hover:text-black/50'
+                                  }`}
+                                >
+                                  {icon}
+                                  <span className="text-[10px] font-bold tracking-wide">{label}</span>
+                                  <span className="text-[8px] opacity-60">{sub}</span>
+                                  <div className={`w-4 h-4 rounded-full flex items-center justify-center border-2 transition-all ${
+                                    isSelected ? 'bg-gold border-gold' : 'border-black/15 bg-white'
+                                  }`}>
+                                    {isSelected && <span className="text-white text-[8px] font-black leading-none">✓</span>}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
 
                         </div>
                       </div>
