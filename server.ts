@@ -59,7 +59,7 @@ async function publishToWordPress(post: any): Promise<{ success: boolean; wpPost
   const contentWithTop = post.top_content_html
     ? baseContent.replace('</h1>', '</h1>\n' + post.top_content_html)
     : baseContent;
-  const finalContent = `${contentWithTop}\n${imageHtml}`;
+  const finalContent = `${contentWithTop}\n${post.above_image_html || ''}\n${imageHtml}`;
 
   // 3. Determine post types
   const destinations: string[] = post.wp_destinations || ['news'];
