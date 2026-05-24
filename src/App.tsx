@@ -405,7 +405,6 @@ function AppContent() {
   const [currentlyPostingId, setCurrentlyPostingId] = useState<string | null>(null);
   const [editingPost, setEditingPost] = useState<BlogPost | null>(null);
   const [previewPost, setPreviewPost] = useState<BlogPost | null>(null);
-  const [uploadInputKey, setUploadInputKey] = useState(0);
   const [blogSettings, setBlogSettings] = useState(() => {
     const defaultSettings = {
       targetUrl: "https://do-date.com/web/",
@@ -913,7 +912,6 @@ ${rawText}`;
       // 単発生成時も生成開始前にuploadedImagesをクリア（OOM防止）
       if (blogSettings.uploadedImages.length > 0 && !customImage) {
         setBlogSettings(prev => ({ ...prev, uploadedImages: [] }));
-        setUploadInputKey(k => k + 1);
       }
     }
 
@@ -1214,11 +1212,12 @@ ${rawText}`;
             ? `${blogSettings.customImagePrompt}. Keywords: ${keywordsString}. STRICT RULE: DO NOT include any text, letters, or characters in the image.`
             : `${selectedImageStyle} Professional photography, 4k. STRICT RULE: DO NOT include any text, letters, or characters in the image. Keywords: ${keywordsString}`;
 
+          const editMimeType = selectedImage.startsWith('data:') ? selectedImage.split(';')[0].split(':')[1] : 'image/png';
           const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
           const imgResponse = await ai.models.generateContent({
             model: 'gemini-2.5-flash-image',
             contents: { parts: [
-              { inlineData: { data: selectedImage.split(',')[1] || selectedImage, mimeType: 'image/png' } },
+              { inlineData: { data: selectedImage.split(',')[1] || selectedImage, mimeType: editMimeType } },
               { text: imagePrompt }
             ]},
             config: { imageConfig: { aspectRatio: "16:9" } }
@@ -1473,7 +1472,6 @@ ${rawText}`;
       const uploadedImagesCopy = [...blogSettings.uploadedImages];
       if (uploadedImagesCopy.length > 0) {
         setBlogSettings(prev => ({ ...prev, uploadedImages: [] }));
-        setUploadInputKey(k => k + 1);
       }
 
       for (const v of variations) {
@@ -3533,16 +3531,14 @@ ${rawText}`;
                               画像を追加
                             </span>
                             <input
-                              key={uploadInputKey}
                               type="file"
                               accept="image/*"
                               multiple
                               className="hidden"
                               onChange={(e) => {
-                                const files = e.target.files;
-                                if (!files) return;
+                                const files = Array.from(e.target.files || []);
                                 e.target.value = '';
-                                Array.from(files).forEach((file: File) => {
+                                files.forEach((file: File) => {
                                   const reader = new FileReader();
                                   reader.onload = (ev) => {
                                     if (ev.target?.result) {
