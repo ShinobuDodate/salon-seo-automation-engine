@@ -479,7 +479,7 @@ async function startServer() {
     try {
       const { data, error } = await supabase
         .from('scheduled_posts')
-        .select('id, title, scheduled_at, status, published_at, error_message, loop_enabled, loop_interval_days, loop_count, post_to_wp, post_to_instagram, post_to_threads, wp_post_id, instagram_post_id, threads_post_id')
+        .select('id, title, scheduled_at, status, published_at, error_message, loop_enabled, loop_interval_days, loop_count, post_to_wp, post_to_instagram, post_to_instagram_story, post_to_threads, wp_post_id, instagram_post_id, threads_post_id')
         .order('scheduled_at', { ascending: true })
         .limit(200);
       if (error) throw error;
