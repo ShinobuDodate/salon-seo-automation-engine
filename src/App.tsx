@@ -4686,27 +4686,30 @@ ${rawText}`;
                             </div>
                             {/* フィード・ストーリー用サイズ選択（1:1と9:16両方ある場合のみ表示） */}
                             {post.imageUrl1x1 && post.imageUrl9x16 && (
-                              <div className="space-y-1 pt-1">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-[8px] text-black/40 w-14 shrink-0">フィード用</span>
-                                  {(['1:1', '9:16'] as const).map(r => (
-                                    <button key={r}
-                                      onClick={() => setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, instaFeedRatio: r } : p))}
-                                      className={`text-[8px] font-bold px-2 py-0.5 rounded-md border transition-all ${(post.instaFeedRatio || '1:1') === r ? 'bg-gold text-white border-gold' : 'bg-white text-black/40 border-black/15 hover:border-gold/50'}`}>
-                                      {r}
-                                    </button>
-                                  ))}
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-[8px] text-black/40 w-14 shrink-0">ストーリー用</span>
-                                  {(['9:16', '1:1'] as const).map(r => (
-                                    <button key={r}
-                                      onClick={() => setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, instaStoryRatio: r } : p))}
-                                      className={`text-[8px] font-bold px-2 py-0.5 rounded-md border transition-all ${(post.instaStoryRatio || '9:16') === r ? 'bg-gold text-white border-gold' : 'bg-white text-black/40 border-black/15 hover:border-gold/50'}`}>
-                                      {r}
-                                    </button>
-                                  ))}
-                                </div>
+                              <div className="space-y-1.5 pt-1.5">
+                                {([
+                                  { label: 'フィード用', key: 'instaFeedRatio' as const, options: ['1:1', '9:16'] as const, def: '1:1' },
+                                  { label: 'ストーリー用', key: 'instaStoryRatio' as const, options: ['9:16', '1:1'] as const, def: '9:16' },
+                                ]).map(({ label, key, options, def }) => (
+                                  <div key={key} className="flex items-center gap-2">
+                                    <span className="text-[8px] text-black/40 w-16 shrink-0 font-medium">{label}</span>
+                                    <div className="flex gap-1">
+                                      {options.map(r => {
+                                        const isSelected = (post[key] || def) === r;
+                                        return (
+                                          <button key={r}
+                                            onClick={() => setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, [key]: r } : p))}
+                                            style={isSelected
+                                              ? { background: '#c5a059', color: '#fff', border: '2px solid #c5a059', fontWeight: 800 }
+                                              : { background: '#f0f0f0', color: '#999', border: '2px solid #ddd' }}
+                                            className="text-[9px] px-2.5 py-1 rounded-lg transition-all">
+                                            {r}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
                             )}
                             <div className="flex-1 min-w-0 space-y-2">
@@ -4721,7 +4724,7 @@ ${rawText}`;
                                 {/* 左側: SNS Preview */}
                                 <div className="flex flex-col h-full">
                                   {(post.instaCaption || post.threadsCaption) ? (
-                                    <div className="p-3 bg-gold/5 border border-gold/10 rounded-xl group/insta relative flex-1 h-48 overflow-y-auto custom-scrollbar">
+                                    <div className="p-3 bg-gold/5 border border-gold/10 rounded-xl group/insta relative flex-1 h-32 overflow-y-auto custom-scrollbar">
                                       <div className="flex items-center justify-between mb-2">
                                         <p className="text-[9px] text-gold font-bold uppercase tracking-widest flex items-center space-x-1">
                                           <Share2 size={10} />
@@ -4780,7 +4783,7 @@ ${rawText}`;
                                         generateInstaForPost(post.id);
                                       }}
                                       disabled={state.status === 'generating'}
-                                      className="text-[9px] text-gold/60 hover:text-gold flex items-center space-x-1 border border-gold/20 rounded-lg px-2 py-3 hover:bg-gold/5 transition-all w-full justify-center h-48"
+                                      className="text-[9px] text-gold/60 hover:text-gold flex items-center space-x-1 border border-gold/20 rounded-lg px-2 py-3 hover:bg-gold/5 transition-all w-full justify-center h-32"
                                     >
                                       <Sparkles size={10} />
                                       <span>SNS用文章を生成する</span>
@@ -4789,7 +4792,7 @@ ${rawText}`;
                                 </div>
                                 
                                 {/* 右側: 記事プレビュー */}
-                                <div className="p-3 bg-white border border-black/5 rounded-xl h-48 overflow-y-auto custom-scrollbar flex flex-col">
+                                <div className="p-3 bg-white border border-black/5 rounded-xl h-32 overflow-y-auto custom-scrollbar flex flex-col">
                                   <div className="text-[8px] uppercase tracking-widest font-bold text-black/30 mb-2 border-b border-black/5 pb-1 flex items-center space-x-1 flex-shrink-0">
                                     <FileText size={10} />
                                     <span>記事プレビュー</span>
