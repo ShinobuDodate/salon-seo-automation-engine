@@ -1230,13 +1230,14 @@ ${rawText}`;
               { inlineData: { data: editData, mimeType: editMimeType } },
               { text: imagePrompt }
             ]},
-            config: { imageConfig: { aspectRatio: ratio } }
+            config: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: ratio } }
           });
-          const [editResp16x9, editResp1x1, editResp9x16] = await Promise.all([
+          const [editResult16x9, editResult1x1, editResult9x16] = await Promise.allSettled([
             makeEditParts("16:9"), makeEditParts("1:1"), makeEditParts("9:16")
           ]);
-          const getPart = (r: any) => r.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
-          const editPart16x9 = getPart(editResp16x9);
+          const getPart = (r: PromiseSettledResult<any>) =>
+            r.status === 'fulfilled' ? r.value?.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData) : null;
+          const editPart16x9 = getPart(editResult16x9);
           if (editPart16x9?.inlineData) {
             imageBase64 = editPart16x9.inlineData.data;
             if (blogSettings.bannerText) {
@@ -1250,8 +1251,8 @@ ${rawText}`;
             imageUrl = selectedImage;
             imageBase64 = editData;
           }
-          const editPart1x1 = getPart(editResp1x1);
-          const editPart9x16 = getPart(editResp9x16);
+          const editPart1x1 = getPart(editResult1x1);
+          const editPart9x16 = getPart(editResult9x16);
           imageUrl1x1 = editPart1x1?.inlineData ? `data:image/png;base64,${editPart1x1.inlineData.data}` : '';
           imageUrl9x16 = editPart9x16?.inlineData ? `data:image/png;base64,${editPart9x16.inlineData.data}` : '';
         } catch (e) {
@@ -1269,15 +1270,16 @@ ${rawText}`;
             : `${selectedImageStyle} This image is for a Japanese beauty salon blog article. Title: "${articleTitle}". Summary: "${articleSummary}". The image must visually represent the article content. Professional photography, 4k. STRICT RULE: DO NOT include any text, letters, or characters in the image. No text, no letters, no characters, no writing. Keywords: ${keywordsString}`;
 
           const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-          const [imgResp16x9, imgResp1x1, imgResp9x16] = await Promise.all([
-            ai.models.generateContent({ model: 'gemini-2.5-flash-image', contents: imagePrompt, config: { imageConfig: { aspectRatio: "16:9" } } }),
-            ai.models.generateContent({ model: 'gemini-2.5-flash-image', contents: imagePrompt, config: { imageConfig: { aspectRatio: "1:1" } } }),
-            ai.models.generateContent({ model: 'gemini-2.5-flash-image', contents: imagePrompt, config: { imageConfig: { aspectRatio: "9:16" } } }),
+          const [imgResult16x9, imgResult1x1, imgResult9x16] = await Promise.allSettled([
+            ai.models.generateContent({ model: 'gemini-2.5-flash-image', contents: imagePrompt, config: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: "16:9" } } }),
+            ai.models.generateContent({ model: 'gemini-2.5-flash-image', contents: imagePrompt, config: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: "1:1" } } }),
+            ai.models.generateContent({ model: 'gemini-2.5-flash-image', contents: imagePrompt, config: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: "9:16" } } }),
           ]);
-          const getPart = (r: any) => r.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
-          const part16x9 = getPart(imgResp16x9);
-          const part1x1 = getPart(imgResp1x1);
-          const part9x16 = getPart(imgResp9x16);
+          const getPart = (r: PromiseSettledResult<any>) =>
+            r.status === 'fulfilled' ? r.value?.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData) : null;
+          const part16x9 = getPart(imgResult16x9);
+          const part1x1 = getPart(imgResult1x1);
+          const part9x16 = getPart(imgResult9x16);
           if (part16x9?.inlineData) {
             imageBase64 = part16x9.inlineData.data;
             if (blogSettings.bannerText) {
