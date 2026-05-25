@@ -2788,10 +2788,10 @@ ${rawText}`;
     try {
       const dests = overrideDestinations ?? blogSettings.destinations;
       const wpSite = blogSettings.wpSites?.find((s: WpSite) => s.id === blogSettings.selectedWpSiteId);
-      const instaAccount = blogSettings.socialAccounts.find((a: SocialAccount) => a.platform === 'instagram' && dests.includes('instagram'));
+      const instaAccount = blogSettings.socialAccounts.find((a: SocialAccount) => a.platform === 'instagram' && (dests.includes('instagram') || dests.includes('instagram_story')));
       const threadsAccount = blogSettings.socialAccounts.find((a: SocialAccount) => a.platform === 'threads' && dests.includes('threads'));
       const hasWp = dests.includes('blog') || dests.includes('news');
-      const hasInsta = !!(instaAccount || (dests.includes('instagram') && blogSettings.instagramBusinessId && blogSettings.instagramAccessToken));
+      const hasInsta = dests.includes('instagram') && !!(instaAccount || (blogSettings.instagramBusinessId && blogSettings.instagramAccessToken));
       const hasStory = dests.includes('instagram_story');
       const hasThreads = !!(threadsAccount || (dests.includes('threads') && blogSettings.socialAccounts.find((a: SocialAccount) => a.platform === 'threads')));
 
