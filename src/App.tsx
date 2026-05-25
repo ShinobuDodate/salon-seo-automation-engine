@@ -2788,12 +2788,12 @@ ${rawText}`;
     try {
       const dests = overrideDestinations ?? blogSettings.destinations;
       const wpSite = blogSettings.wpSites?.find((s: WpSite) => s.id === blogSettings.selectedWpSiteId);
-      const instaAccount = blogSettings.socialAccounts.find((a: SocialAccount) => a.platform === 'instagram' && (post.selectedSocialAccounts?.includes(a.id) || dests.includes('instagram')));
-      const threadsAccount = blogSettings.socialAccounts.find((a: SocialAccount) => a.platform === 'threads' && (post.selectedSocialAccounts?.includes(a.id) || dests.includes('threads')));
+      const instaAccount = blogSettings.socialAccounts.find((a: SocialAccount) => a.platform === 'instagram' && dests.includes('instagram'));
+      const threadsAccount = blogSettings.socialAccounts.find((a: SocialAccount) => a.platform === 'threads' && dests.includes('threads'));
       const hasWp = dests.includes('blog') || dests.includes('news');
       const hasInsta = !!(instaAccount || (dests.includes('instagram') && blogSettings.instagramBusinessId && blogSettings.instagramAccessToken));
       const hasStory = dests.includes('instagram_story');
-      const hasThreads = !!threadsAccount;
+      const hasThreads = !!(threadsAccount || (dests.includes('threads') && blogSettings.socialAccounts.find((a: SocialAccount) => a.platform === 'threads')));
 
       const _loopActiveSalon = blogSettings.salonProfiles.find(s => s.id === blogSettings.selectedSalonId);
       const _loopActiveContents = (_loopActiveSalon?.commonContents && _loopActiveSalon.commonContents.length > 0) ? _loopActiveSalon.commonContents : blogSettings.commonContents;
