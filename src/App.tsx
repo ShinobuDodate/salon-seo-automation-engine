@@ -2201,17 +2201,9 @@ ${rawText}`;
     const dests = overrideDestinations ?? blogSettings.destinations;
     const hasWpDestination = dests.includes('blog') || dests.includes('news');
 
-    const hasInstaDestination = dests.includes('instagram') ||
-      (!overrideDestinations && post.selectedSocialAccounts && post.selectedSocialAccounts.some(id =>
-        blogSettings.socialAccounts.find(a => a.id === id)?.platform === 'instagram'
-      ));
-
+    const hasInstaDestination = dests.includes('instagram');
     const hasStoryDestination = dests.includes('instagram_story');
-
-    const hasThreadsDestination = dests.includes('threads') ||
-      (!overrideDestinations && post.selectedSocialAccounts && post.selectedSocialAccounts.some(id =>
-        blogSettings.socialAccounts.find(a => a.id === id)?.platform === 'threads'
-      ));
+    const hasThreadsDestination = dests.includes('threads');
 
     if (hasWpDestination && (!blogSettings.username || !blogSettings.appPassword)) {
       if (!isBulk) setNotification({ message: "WordPressのユーザー名とアプリケーションパスワードを設定してください。", type: 'error' });
