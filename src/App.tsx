@@ -1232,9 +1232,10 @@ ${rawText}`;
             ]},
             config: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: ratio } }
           });
-          const [editResult16x9, editResult1x1, editResult9x16] = await Promise.allSettled([
-            makeEditParts("16:9"), makeEditParts("1:1"), makeEditParts("9:16")
+          const [editResult16x9, editResult1x1] = await Promise.allSettled([
+            makeEditParts("16:9"), makeEditParts("1:1")
           ]);
+          const [editResult9x16] = await Promise.allSettled([makeEditParts("9:16")]);
           const getPart = (r: PromiseSettledResult<any>) =>
             r.status === 'fulfilled' ? r.value?.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData) : null;
           const editPart16x9 = getPart(editResult16x9);
@@ -1270,9 +1271,11 @@ ${rawText}`;
             : `${selectedImageStyle} This image is for a Japanese beauty salon blog article. Title: "${articleTitle}". Summary: "${articleSummary}". The image must visually represent the article content. Professional photography, 4k. STRICT RULE: DO NOT include any text, letters, or characters in the image. No text, no letters, no characters, no writing. Keywords: ${keywordsString}`;
 
           const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-          const [imgResult16x9, imgResult1x1, imgResult9x16] = await Promise.allSettled([
+          const [imgResult16x9, imgResult1x1] = await Promise.allSettled([
             ai.models.generateContent({ model: 'gemini-2.5-flash-image', contents: imagePrompt, config: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: "16:9" } } }),
             ai.models.generateContent({ model: 'gemini-2.5-flash-image', contents: imagePrompt, config: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: "1:1" } } }),
+          ]);
+          const [imgResult9x16] = await Promise.allSettled([
             ai.models.generateContent({ model: 'gemini-2.5-flash-image', contents: imagePrompt, config: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: "9:16" } } }),
           ]);
           const getPart = (r: PromiseSettledResult<any>) =>
@@ -4680,21 +4683,18 @@ ${rawText}`;
                                   </div>
                                 )}
                               </div>
-                              {/* サイズ選択（両方ある場合のみ） */}
-                              {post.imageUrl1x1 && post.imageUrl9x16 && (
+                              {/* サイズ選択（片方でもあれば表示） */}
+                              {(post.imageUrl1x1 || post.imageUrl9x16) && (
                                 <div className="space-y-1">
-                                  {([
-                                    { label: 'フィード用', key: 'instaFeedRatio' as const, options: ['1:1', '9:16'] as const, def: '1:1' },
-                                    { label: 'ストーリー用', key: 'instaStoryRatio' as const, options: ['9:16', '1:1'] as const, def: '9:16' },
-                                  ]).map(({ label, key, options, def }) => (
-                                    <div key={key} className="flex items-center gap-2">
-                                      <span className="text-[8px] text-black/40 w-16 shrink-0">{label}</span>
+                                  {post.imageUrl1x1 && (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[8px] text-black/40 w-16 shrink-0">フィード用</span>
                                       <div className="flex gap-1">
-                                        {options.map(r => {
-                                          const isSelected = (post[key] || def) === r;
+                                        {(['1:1', ...(post.imageUrl9x16 ? ['9:16'] : [])] as ('1:1' | '9:16')[]).map(r => {
+                                          const isSelected = (post.instaFeedRatio || '1:1') === r;
                                           return (
                                             <button key={r}
-                                              onClick={() => setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, [key]: r } : p))}
+                                              onClick={() => setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, instaFeedRatio: r } : p))}
                                               style={isSelected
                                                 ? { background: '#c5a059', color: '#fff', border: '2px solid #c5a059', fontWeight: 800 }
                                                 : { background: '#f0f0f0', color: '#aaa', border: '2px solid #e0e0e0' }}
@@ -4705,7 +4705,27 @@ ${rawText}`;
                                         })}
                                       </div>
                                     </div>
-                                  ))}
+                                  )}
+                                  {post.imageUrl9x16 && (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[8px] text-black/40 w-16 shrink-0">ストーリー用</span>
+                                      <div className="flex gap-1">
+                                        {(['9:16', ...(post.imageUrl1x1 ? ['1:1'] : [])] as ('9:16' | '1:1')[]).map(r => {
+                                          const isSelected = (post.instaStoryRatio || '9:16') === r;
+                                          return (
+                                            <button key={r}
+                                              onClick={() => setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, instaStoryRatio: r } : p))}
+                                              style={isSelected
+                                                ? { background: '#c5a059', color: '#fff', border: '2px solid #c5a059', fontWeight: 800 }
+                                                : { background: '#f0f0f0', color: '#aaa', border: '2px solid #e0e0e0' }}
+                                              className="text-[9px] px-2.5 py-0.5 rounded-lg transition-all">
+                                              {r}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                               {/* 投稿先バッジ */}
