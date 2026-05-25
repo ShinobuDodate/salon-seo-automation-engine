@@ -4661,148 +4661,107 @@ ${rawText}`;
                           className="bg-black/5 border border-black/10 rounded-xl p-4 space-y-4"
                         >
                           <div className="flex gap-4">
-                            <div className="flex gap-1.5 flex-shrink-0 items-start">
-                              {post.imageUrl && (
-                                <div className="relative group/img">
-                                  <img src={post.imageUrl} className="w-24 h-14 lg:w-32 lg:h-18 object-cover rounded-lg" alt="" title="16:9 (WP・フィード)" />
-                                  <span className="absolute bottom-0.5 left-0.5 text-[6px] bg-black/60 text-white px-1 rounded font-bold">16:9</span>
-                                  <button onClick={() => downloadImage(post.imageUrl!, `blog-image-${post.id}.png`)} className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center rounded-lg text-white" title="ダウンロード"><ImageIcon size={14} /></button>
-                                </div>
-                              )}
-                              {post.imageUrl1x1 && (
-                                <div className="relative group/img">
-                                  <img src={post.imageUrl1x1} className="w-14 h-14 object-cover rounded-lg" alt="" title="1:1 (Instagram)" />
-                                  <span className="absolute bottom-0.5 left-0.5 text-[6px] bg-black/60 text-white px-1 rounded font-bold">1:1</span>
-                                  <button onClick={() => downloadImage(post.imageUrl1x1!, `blog-image-${post.id}-1x1.png`)} className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center rounded-lg text-white" title="ダウンロード"><ImageIcon size={14} /></button>
-                                </div>
-                              )}
-                              {post.imageUrl9x16 && (
-                                <div className="relative group/img">
-                                  <img src={post.imageUrl9x16} className="w-8 h-14 object-cover rounded-lg" alt="" title="9:16 (ストーリー)" />
-                                  <span className="absolute bottom-0.5 left-0.5 text-[6px] bg-black/60 text-white px-1 rounded font-bold">9:16</span>
-                                  <button onClick={() => downloadImage(post.imageUrl9x16!, `blog-image-${post.id}-9x16.png`)} className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center rounded-lg text-white" title="ダウンロード"><ImageIcon size={14} /></button>
+                            {/* 左列: 画像 + サイズ選択 */}
+                            <div className="flex-shrink-0 space-y-2">
+                              <div className="flex gap-2 items-end">
+                                {post.imageUrl && (
+                                  <div className="relative group/img">
+                                    <img src={post.imageUrl} className="w-40 h-24 object-cover rounded-lg" alt="" />
+                                    <span className="absolute bottom-0.5 left-0.5 text-[6px] bg-black/60 text-white px-1 rounded font-bold">16:9</span>
+                                    <button onClick={() => downloadImage(post.imageUrl!, `blog-image-${post.id}.png`)} className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center rounded-lg text-white"><ImageIcon size={14} /></button>
+                                  </div>
+                                )}
+                                {post.imageUrl1x1 && (
+                                  <div className="relative group/img">
+                                    <img src={post.imageUrl1x1} className="w-24 h-24 object-cover rounded-lg" alt="" />
+                                    <span className="absolute bottom-0.5 left-0.5 text-[6px] bg-black/60 text-white px-1 rounded font-bold">1:1</span>
+                                    <button onClick={() => downloadImage(post.imageUrl1x1!, `blog-image-${post.id}-1x1.png`)} className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center rounded-lg text-white"><ImageIcon size={14} /></button>
+                                  </div>
+                                )}
+                                {post.imageUrl9x16 && (
+                                  <div className="relative group/img">
+                                    <img src={post.imageUrl9x16} className="w-14 h-24 object-cover rounded-lg" alt="" />
+                                    <span className="absolute bottom-0.5 left-0.5 text-[6px] bg-black/60 text-white px-1 rounded font-bold">9:16</span>
+                                    <button onClick={() => downloadImage(post.imageUrl9x16!, `blog-image-${post.id}-9x16.png`)} className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center rounded-lg text-white"><ImageIcon size={14} /></button>
+                                  </div>
+                                )}
+                              </div>
+                              {/* サイズ選択（両方ある場合のみ） */}
+                              {post.imageUrl1x1 && post.imageUrl9x16 && (
+                                <div className="space-y-1">
+                                  {([
+                                    { label: 'フィード用', key: 'instaFeedRatio' as const, options: ['1:1', '9:16'] as const, def: '1:1' },
+                                    { label: 'ストーリー用', key: 'instaStoryRatio' as const, options: ['9:16', '1:1'] as const, def: '9:16' },
+                                  ]).map(({ label, key, options, def }) => (
+                                    <div key={key} className="flex items-center gap-2">
+                                      <span className="text-[8px] text-black/40 w-16 shrink-0">{label}</span>
+                                      <div className="flex gap-1">
+                                        {options.map(r => {
+                                          const isSelected = (post[key] || def) === r;
+                                          return (
+                                            <button key={r}
+                                              onClick={() => setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, [key]: r } : p))}
+                                              style={isSelected
+                                                ? { background: '#c5a059', color: '#fff', border: '2px solid #c5a059', fontWeight: 800 }
+                                                : { background: '#f0f0f0', color: '#aaa', border: '2px solid #e0e0e0' }}
+                                              className="text-[9px] px-2.5 py-0.5 rounded-lg transition-all">
+                                              {r}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  ))}
                                 </div>
                               )}
                             </div>
-                            {/* フィード・ストーリー用サイズ選択（1:1と9:16両方ある場合のみ表示） */}
-                            {post.imageUrl1x1 && post.imageUrl9x16 && (
-                              <div className="space-y-1.5 pt-1.5">
-                                {([
-                                  { label: 'フィード用', key: 'instaFeedRatio' as const, options: ['1:1', '9:16'] as const, def: '1:1' },
-                                  { label: 'ストーリー用', key: 'instaStoryRatio' as const, options: ['9:16', '1:1'] as const, def: '9:16' },
-                                ]).map(({ label, key, options, def }) => (
-                                  <div key={key} className="flex items-center gap-2">
-                                    <span className="text-[8px] text-black/40 w-16 shrink-0 font-medium">{label}</span>
-                                    <div className="flex gap-1">
-                                      {options.map(r => {
-                                        const isSelected = (post[key] || def) === r;
-                                        return (
-                                          <button key={r}
-                                            onClick={() => setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, [key]: r } : p))}
-                                            style={isSelected
-                                              ? { background: '#c5a059', color: '#fff', border: '2px solid #c5a059', fontWeight: 800 }
-                                              : { background: '#f0f0f0', color: '#999', border: '2px solid #ddd' }}
-                                            className="text-[9px] px-2.5 py-1 rounded-lg transition-all">
-                                            {r}
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
+
+                            {/* 右列: タイトル + プレビュー */}
                             <div className="flex-1 min-w-0 space-y-2">
                               <div className="flex items-center space-x-2">
                                 <h4 className="text-sm font-bold text-black/90 truncate">{post.title}</h4>
                                 {post.instaCaption && (
-                                  <span className="text-[8px] bg-gold/20 text-gold px-1.5 py-0.5 rounded-md font-bold uppercase tracking-tighter">Insta Ready</span>
+                                  <span className="text-[8px] bg-gold/20 text-gold px-1.5 py-0.5 rounded-md font-bold uppercase tracking-tighter shrink-0">Insta Ready</span>
                                 )}
                               </div>
-                              
-                              <div className="grid grid-cols-2 gap-4 mt-2">
-                                {/* 左側: SNS Preview */}
-                                <div className="flex flex-col h-full">
-                                  {(post.instaCaption || post.threadsCaption) ? (
-                                    <div className="p-3 bg-gold/5 border border-gold/10 rounded-xl group/insta relative flex-1 h-32 overflow-y-auto custom-scrollbar">
-                                      <div className="flex items-center justify-between mb-2">
-                                        <p className="text-[9px] text-gold font-bold uppercase tracking-widest flex items-center space-x-1">
-                                          <Share2 size={10} />
-                                          <span>SNS Preview</span>
-                                        </p>
-                                        <div className="flex items-center space-x-2">
-                                          <button 
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              downloadImage(post.imageUrl!, `social-image-${post.id}.png`);
-                                            }}
-                                            className="text-[8px] text-gold hover:underline font-bold opacity-0 group-hover/insta:opacity-100 transition-opacity flex items-center space-x-1"
-                                          >
-                                            <ImageIcon size={8} />
-                                            <span>保存</span>
-                                          </button>
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              const computed = computeSnsCaptions(post);
-                                              const text = computed.threads || computed.insta || '';
-                                              navigator.clipboard.writeText(text);
-                                              setNotification({ message: 'SNS用文章をコピーしました！', type: 'success' });
-                                            }}
-                                            className="text-[8px] text-gold hover:underline font-bold opacity-0 group-hover/insta:opacity-100 transition-opacity"
-                                          >
-                                            コピー
-                                          </button>
-                                        </div>
-                                      </div>
-                                      {(() => {
-                                        const computed = computeSnsCaptions(post);
-                                        return (
-                                          <div className="space-y-2">
-                                            {computed.insta && (
-                                              <div className="space-y-1">
-                                                <p className="text-[7px] text-pink-500 font-bold uppercase tracking-tighter">Instagram</p>
-                                                <p className="text-[9px] text-black/60 leading-relaxed whitespace-pre-wrap">{computed.insta}</p>
-                                              </div>
-                                            )}
-                                            {computed.threads && (
-                                              <div className="space-y-1">
-                                                <p className="text-[7px] text-black font-bold uppercase tracking-tighter">Threads</p>
-                                                <p className="text-[9px] text-black/60 leading-relaxed whitespace-pre-wrap">{computed.threads}</p>
-                                              </div>
-                                            )}
-                                          </div>
-                                        );
-                                      })()}
 
+                              <div className="grid grid-cols-2 gap-3">
+                                {/* Instagram Preview */}
+                                {post.instaCaption ? (
+                                  <div className="group/insta p-2.5 bg-gold/5 border border-gold/10 rounded-xl h-28 overflow-y-auto custom-scrollbar relative">
+                                    <div className="flex items-center justify-between mb-1.5">
+                                      <p className="text-[7px] text-pink-500 font-bold uppercase tracking-widest">Instagram</p>
+                                      <button onClick={(e) => { e.stopPropagation(); const c = computeSnsCaptions(post); navigator.clipboard.writeText(c.insta || ''); setNotification({ message: 'Instagramキャプションをコピーしました！', type: 'success' }); }}
+                                        className="text-[8px] text-gold hover:underline opacity-0 group-hover/insta:opacity-100 transition-opacity">コピー</button>
                                     </div>
-                                  ) : (
-                                    <button 
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        generateInstaForPost(post.id);
-                                      }}
-                                      disabled={state.status === 'generating'}
-                                      className="text-[9px] text-gold/60 hover:text-gold flex items-center space-x-1 border border-gold/20 rounded-lg px-2 py-3 hover:bg-gold/5 transition-all w-full justify-center h-32"
-                                    >
-                                      <Sparkles size={10} />
-                                      <span>SNS用文章を生成する</span>
-                                    </button>
-                                  )}
-                                </div>
-                                
-                                {/* 右側: 記事プレビュー */}
-                                <div className="p-3 bg-white border border-black/5 rounded-xl h-32 overflow-y-auto custom-scrollbar flex flex-col">
-                                  <div className="text-[8px] uppercase tracking-widest font-bold text-black/30 mb-2 border-b border-black/5 pb-1 flex items-center space-x-1 flex-shrink-0">
-                                    <FileText size={10} />
-                                    <span>記事プレビュー</span>
+                                    <p className="text-[9px] text-black/60 leading-relaxed whitespace-pre-wrap">{computeSnsCaptions(post).insta}</p>
                                   </div>
-                                  <div 
-                                    className="text-[10px] text-black/60 leading-relaxed font-medium markdown-preview break-all overflow-hidden"
-                                    dangerouslySetInnerHTML={{ __html: post.content }} 
-                                  />
+                                ) : (
+                                  <button onClick={(e) => { e.stopPropagation(); generateInstaForPost(post.id); }}
+                                    disabled={state.status === 'generating'}
+                                    className="text-[9px] text-gold/60 hover:text-gold flex items-center justify-center space-x-1 border border-gold/20 rounded-xl h-28 hover:bg-gold/5 transition-all">
+                                    <Sparkles size={10} /><span>SNS用文章を生成する</span>
+                                  </button>
+                                )}
+
+                                {/* 記事プレビュー */}
+                                <div className="p-2.5 bg-white border border-black/5 rounded-xl h-28 overflow-y-auto custom-scrollbar">
+                                  <p className="text-[7px] uppercase tracking-widest font-bold text-black/30 mb-1.5 flex items-center gap-1"><FileText size={9} />記事プレビュー</p>
+                                  <div className="text-[9px] text-black/60 leading-relaxed markdown-preview break-all" dangerouslySetInnerHTML={{ __html: post.content }} />
                                 </div>
                               </div>
+
+                              {/* Threads Preview（存在する場合のみ、別枠で表示） */}
+                              {post.threadsCaption && (
+                                <div className="group/threads p-2.5 bg-black/3 border border-black/8 rounded-xl h-20 overflow-y-auto custom-scrollbar relative">
+                                  <div className="flex items-center justify-between mb-1">
+                                    <p className="text-[7px] text-black/50 font-bold uppercase tracking-widest">Threads</p>
+                                    <button onClick={(e) => { e.stopPropagation(); const c = computeSnsCaptions(post); navigator.clipboard.writeText(c.threads || ''); setNotification({ message: 'Threadsキャプションをコピーしました！', type: 'success' }); }}
+                                      className="text-[8px] text-black/40 hover:underline opacity-0 group-hover/threads:opacity-100 transition-opacity">コピー</button>
+                                  </div>
+                                  <p className="text-[9px] text-black/50 leading-relaxed whitespace-pre-wrap">{computeSnsCaptions(post).threads}</p>
+                                </div>
+                              )}
                             </div>
                           </div>
                           <div className="flex items-center justify-between pt-2 border-t border-black/5">
