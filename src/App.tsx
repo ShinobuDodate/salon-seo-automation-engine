@@ -580,13 +580,12 @@ function AppContent() {
   const [isFetchingSupabase, setIsFetchingSupabase] = useState(false);
   const [postingModal, setPostingModal] = useState<{
     post: BlogPost | null;
-    mode: 'immediate' | 'scheduled' | 'loop';
-    destinations: string[];
+    mode: 'scheduled' | 'loop';
     loopEnabled: boolean;
     loopIntervalDays: number;
     loopTime: string;
     saving: boolean;
-  }>({ post: null, mode: 'immediate', destinations: [], loopEnabled: true, loopIntervalDays: 43200, loopTime: '', saving: false });
+  }>({ post: null, mode: 'scheduled', loopEnabled: true, loopIntervalDays: 43200, loopTime: '', saving: false });
 
   const formatLoopInterval = (minutes: number) => {
     if (minutes < 60) return `${minutes}分`;
@@ -2887,7 +2886,7 @@ ${rawText}`;
       if (data.error) throw new Error(data.error);
 
       setNotification({ message: `「${post.title}」をSupabaseに予約しました！${loopEnabled ? `（${formatLoopInterval(loopIntervalDays)}ごとにループ）` : ''}`, type: 'success' });
-      setPostingModal({ post: null, mode: 'immediate', destinations: [], loopEnabled: true, loopIntervalDays: 43200, loopTime: '', saving: false });
+      setPostingModal({ post: null, mode: 'scheduled', loopEnabled: true, loopIntervalDays: 43200, loopTime: '', saving: false });
       setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, status: 'scheduled' } : p));
       if (showSupabasePanel) fetchSupabasePosts();
     } catch (e: any) {
@@ -4839,7 +4838,7 @@ ${rawText}`;
                               {post.status !== 'posted' && (
                                 <div className="flex items-center space-x-2">
                                   <button
-                                    onClick={() => setPostingModal({ post, mode: 'immediate', destinations: [...blogSettings.destinations], loopEnabled: true, loopIntervalDays: 43200, loopTime: '', saving: false })}
+                                    onClick={() => postToBlog(post, true)}
                                     disabled={currentlyPostingId === post.id}
                                     className={`text-[10px] flex items-center space-x-1 transition-all px-2 py-1 rounded-md ${
                                       currentlyPostingId === post.id
@@ -4852,7 +4851,7 @@ ${rawText}`;
                                   </button>
 
                                   <button
-                                    onClick={() => setPostingModal({ post, mode: 'scheduled', destinations: [...blogSettings.destinations], loopEnabled: false, loopIntervalDays: 43200, loopTime: '', saving: false })}
+                                    onClick={() => setPostingModal({ post, mode: 'scheduled', loopEnabled: false, loopIntervalDays: 43200, loopTime: '', saving: false })}
                                     disabled={currentlyPostingId === post.id}
                                     className={`text-[10px] flex items-center space-x-1 transition-all px-2 py-1 rounded-md ${
                                       currentlyPostingId === post.id
@@ -4865,7 +4864,7 @@ ${rawText}`;
                                   </button>
 
                                   <button
-                                    onClick={() => setPostingModal({ post, mode: 'loop', destinations: [...blogSettings.destinations], loopEnabled: true, loopIntervalDays: 43200, loopTime: '', saving: false })}
+                                    onClick={() => setPostingModal({ post, mode: 'loop', loopEnabled: true, loopIntervalDays: 43200, loopTime: '', saving: false })}
                                     disabled={currentlyPostingId === post.id}
                                     className="text-[10px] flex items-center space-x-1 transition-all px-2 py-1 rounded-md text-purple-400 hover:bg-purple-500/10 hover:underline"
                                   >
@@ -5069,9 +5068,9 @@ ${rawText}`;
             >
               {/* Header */}
               <div className="flex items-center justify-between">
-                <h3 className="font-bold text-sm flex items-center space-x-2" style={{ color: postingModal.mode === 'loop' ? '#7c3aed' : postingModal.mode === 'scheduled' ? '#c5a059' : '#10b981' }}>
-                  {postingModal.mode === 'loop' ? <RefreshCw size={16} /> : postingModal.mode === 'scheduled' ? <Calendar size={16} /> : <Play size={16} />}
-                  <span>{postingModal.mode === 'loop' ? 'ループ予約' : postingModal.mode === 'scheduled' ? '予約投稿' : '今すぐ投稿'}</span>
+                <h3 className="font-bold text-sm flex items-center space-x-2" style={{ color: postingModal.mode === 'loop' ? '#7c3aed' : '#c5a059' }}>
+                  {postingModal.mode === 'loop' ? <RefreshCw size={16} /> : <Calendar size={16} />}
+                  <span>{postingModal.mode === 'loop' ? 'ループ予約' : '予約投稿'}</span>
                 </h3>
                 <button onClick={() => setPostingModal(prev => ({ ...prev, post: null }))} className="text-black/30 hover:text-black/60"><X size={18} /></button>
               </div>
@@ -5080,41 +5079,12 @@ ${rawText}`;
 
               {/* Mode tabs */}
               <div className="flex space-x-1 bg-black/5 rounded-xl p-1">
-                {(['immediate', 'scheduled', 'loop'] as const).map(m => (
+                {(['scheduled', 'loop'] as const).map(m => (
                   <button key={m} onClick={() => setPostingModal(prev => ({ ...prev, mode: m }))}
                     className={`flex-1 text-[10px] font-bold py-1.5 rounded-lg transition-all ${postingModal.mode === m ? 'bg-white shadow text-black' : 'text-black/40 hover:text-black/60'}`}>
-                    {m === 'immediate' ? '即時投稿' : m === 'scheduled' ? '予約投稿' : 'ループ予約'}
+                    {m === 'scheduled' ? '予約投稿' : 'ループ予約'}
                   </button>
                 ))}
-              </div>
-
-              {/* 投稿先選択 */}
-              <div className="space-y-2">
-                <label className="text-[10px] text-black/40 uppercase font-bold tracking-widest">投稿先を選ぶ</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { id: 'blog', label: 'WP 投稿', sub: 'ブログ' },
-                    { id: 'news', label: 'WP お知らせ', sub: 'ニュース' },
-                    { id: 'instagram', label: 'Instagram', sub: 'フィード (1:1)' },
-                    { id: 'instagram_story', label: 'ストーリー', sub: 'Story (9:16)' },
-                    { id: 'threads', label: 'Threads', sub: 'スレッズ' },
-                  ].map(({ id, label, sub }) => {
-                    const isSelected = postingModal.destinations.includes(id);
-                    return (
-                      <button key={id}
-                        onClick={() => {
-                          const newDests = isSelected ? postingModal.destinations.filter(d => d !== id) : [...postingModal.destinations, id];
-                          setPostingModal(prev => ({ ...prev, destinations: newDests }));
-                        }}
-                        className="rounded-xl flex flex-col items-start px-3 py-2 gap-0.5 transition-all text-left"
-                        style={isSelected ? { background: 'rgba(197,160,89,0.12)', border: '2px solid #c5a059', color: '#c5a059' } : { background: '#f5f5f5', border: '2px solid rgba(0,0,0,0.08)', color: 'rgba(0,0,0,0.35)' }}
-                      >
-                        <span className="text-[10px] font-bold">{label}</span>
-                        <span className="text-[8px] opacity-70">{sub}</span>
-                      </button>
-                    );
-                  })}
-                </div>
               </div>
 
               {/* ループ設定（ループモード時のみ） */}
@@ -5161,28 +5131,24 @@ ${rawText}`;
                 onClick={() => {
                   if (!postingModal.post || postingModal.saving) return;
                   if (postingModal.mode === 'loop') {
-                    saveToSupabase(postingModal.post, postingModal.loopEnabled, postingModal.loopIntervalDays, postingModal.loopTime, postingModal.destinations);
+                    saveToSupabase(postingModal.post, postingModal.loopEnabled, postingModal.loopIntervalDays, postingModal.loopTime);
                   } else {
                     const p = postingModal.post;
-                    const dests = postingModal.destinations;
-                    const isNow = postingModal.mode === 'immediate';
                     setPostingModal(prev => ({ ...prev, post: null }));
-                    postToBlog(p, isNow, false, dests);
+                    postToBlog(p, false);
                   }
                 }}
-                disabled={postingModal.saving || postingModal.destinations.length === 0}
+                disabled={postingModal.saving}
                 className={`w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center space-x-2 ${
-                  postingModal.saving || postingModal.destinations.length === 0
+                  postingModal.saving
                     ? 'bg-black/10 text-black/30 cursor-not-allowed'
                     : postingModal.mode === 'loop'
                       ? 'bg-purple-600 text-white hover:bg-purple-700 shadow-lg shadow-purple-200'
-                      : postingModal.mode === 'scheduled'
-                        ? 'bg-amber-500 text-white hover:bg-amber-600 shadow-lg'
-                        : 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg'
+                      : 'bg-amber-500 text-white hover:bg-amber-600 shadow-lg'
                 }`}
               >
-                {postingModal.saving ? <Loader2 size={16} className="animate-spin" /> : postingModal.mode === 'loop' ? <Database size={16} /> : postingModal.mode === 'scheduled' ? <Calendar size={16} /> : <Play size={16} />}
-                <span>{postingModal.saving ? '処理中...' : postingModal.destinations.length === 0 ? '投稿先を選んでください' : postingModal.mode === 'loop' ? 'Supabaseに予約する' : postingModal.mode === 'scheduled' ? '予約する' : '今すぐ投稿する'}</span>
+                {postingModal.saving ? <Loader2 size={16} className="animate-spin" /> : postingModal.mode === 'loop' ? <Database size={16} /> : <Calendar size={16} />}
+                <span>{postingModal.saving ? '処理中...' : postingModal.mode === 'loop' ? 'Supabaseに予約する' : '予約する'}</span>
               </button>
             </motion.div>
           </motion.div>
