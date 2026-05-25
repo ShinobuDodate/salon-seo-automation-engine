@@ -55,7 +55,9 @@ interface BlogPost {
   instaCaption?: string;
   instaHashtags?: string;
   threadsCaption?: string;
-  imageUrl?: string;
+  imageUrl?: string;     // 16:9
+  imageUrl1x1?: string;  // 1:1 (Instagram feed)
+  imageUrl9x16?: string; // 9:16 (Instagram Stories)
   imageBase64?: string;
   keywords: string[];
   scheduledAt: string;
@@ -367,6 +369,8 @@ function AppContent() {
           ...p,
           imageBase64: undefined,
           imageUrl: p.imageUrl?.startsWith('data:') ? undefined : p.imageUrl,
+          imageUrl1x1: p.imageUrl1x1?.startsWith('data:') ? undefined : p.imageUrl1x1,
+          imageUrl9x16: p.imageUrl9x16?.startsWith('data:') ? undefined : p.imageUrl9x16,
         }));
       } catch (e) {
         return [];
@@ -381,9 +385,9 @@ function AppContent() {
       return posts.slice(0, limit).map(p => {
         const post = { ...p };
         post.imageBase64 = undefined;
-        if (post.imageUrl?.startsWith('data:')) {
-          post.imageUrl = undefined;
-        }
+        if (post.imageUrl?.startsWith('data:')) post.imageUrl = undefined;
+        if (post.imageUrl1x1?.startsWith('data:')) post.imageUrl1x1 = undefined;
+        if (post.imageUrl9x16?.startsWith('data:')) post.imageUrl9x16 = undefined;
         return post;
       });
     };
@@ -574,13 +578,15 @@ function AppContent() {
   const [showSupabasePanel, setShowSupabasePanel] = useState(false);
   const [supabasePosts, setSupabasePosts] = useState<any[]>([]);
   const [isFetchingSupabase, setIsFetchingSupabase] = useState(false);
-  const [loopModal, setLoopModal] = useState<{
+  const [postingModal, setPostingModal] = useState<{
     post: BlogPost | null;
+    mode: 'immediate' | 'scheduled' | 'loop';
+    destinations: string[];
     loopEnabled: boolean;
     loopIntervalDays: number;
-    loopTime: string; // "HH:MM" 空文字なら時刻指定なし
+    loopTime: string;
     saving: boolean;
-  }>({ post: null, loopEnabled: true, loopIntervalDays: 43200, loopTime: '', saving: false });
+  }>({ post: null, mode: 'immediate', destinations: [], loopEnabled: true, loopIntervalDays: 43200, loopTime: '', saving: false });
 
   const formatLoopInterval = (minutes: number) => {
     if (minutes < 60) return `${minutes}分`;
@@ -1177,6 +1183,8 @@ ${rawText}`;
 
       let imageUrl = '';
       let imageBase64 = '';
+      let imageUrl1x1 = '';
+      let imageUrl9x16 = '';
 
       // Use the provided customImage if available, otherwise fallback to the first uploaded image if in upload/edit mode
       const selectedImage = customImage || (blogSettings.uploadedImages.length > 0 ? blogSettings.uploadedImages[0] : undefined);
@@ -1206,25 +1214,30 @@ ${rawText}`;
           }
         }
       } else if (blogSettings.imageMode === 'edit' && selectedImage) {
-        // Image-to-Image
+        // Image-to-Image - generate 16:9, 1:1, 9:16 in parallel
         try {
           const imagePrompt = blogSettings.customImagePrompt
             ? `${blogSettings.customImagePrompt}. Keywords: ${keywordsString}. STRICT RULE: DO NOT include any text, letters, or characters in the image.`
             : `${selectedImageStyle} Professional photography, 4k. STRICT RULE: DO NOT include any text, letters, or characters in the image. Keywords: ${keywordsString}`;
 
           const editMimeType = selectedImage.startsWith('data:') ? selectedImage.split(';')[0].split(':')[1] : 'image/png';
+          const editData = selectedImage.split(',')[1] || selectedImage;
           const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-          const imgResponse = await ai.models.generateContent({
+          const makeEditParts = (ratio: string) => ai.models.generateContent({
             model: 'gemini-2.5-flash-image',
             contents: { parts: [
-              { inlineData: { data: selectedImage.split(',')[1] || selectedImage, mimeType: editMimeType } },
+              { inlineData: { data: editData, mimeType: editMimeType } },
               { text: imagePrompt }
             ]},
-            config: { imageConfig: { aspectRatio: "16:9" } }
+            config: { imageConfig: { aspectRatio: ratio } }
           });
-          const imgPart = imgResponse.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
-          if (imgPart?.inlineData) {
-            imageBase64 = imgPart.inlineData.data;
+          const [editResp16x9, editResp1x1, editResp9x16] = await Promise.all([
+            makeEditParts("16:9"), makeEditParts("1:1"), makeEditParts("9:16")
+          ]);
+          const getPart = (r: any) => r.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
+          const editPart16x9 = getPart(editResp16x9);
+          if (editPart16x9?.inlineData) {
+            imageBase64 = editPart16x9.inlineData.data;
             if (blogSettings.bannerText) {
               const overlaid = await overlayTextOnImage(imageBase64, blogSettings.bannerText);
               imageUrl = overlaid.url;
@@ -1234,15 +1247,19 @@ ${rawText}`;
             }
           } else {
             imageUrl = selectedImage;
-            imageBase64 = selectedImage.split(',')[1] || selectedImage;
+            imageBase64 = editData;
           }
+          const editPart1x1 = getPart(editResp1x1);
+          const editPart9x16 = getPart(editResp9x16);
+          imageUrl1x1 = editPart1x1?.inlineData ? `data:image/png;base64,${editPart1x1.inlineData.data}` : '';
+          imageUrl9x16 = editPart9x16?.inlineData ? `data:image/png;base64,${editPart9x16.inlineData.data}` : '';
         } catch (e) {
           console.error("Image edit error:", e);
           imageUrl = selectedImage;
           imageBase64 = selectedImage.split(',')[1] || selectedImage;
         }
       } else {
-        // AI Generation (default)
+        // AI Generation (default) - generate 16:9, 1:1, 9:16 in parallel
         try {
           const articleTitle = blogData.title || keywordsString;
           const articleSummary = blogData.metaDescription || '';
@@ -1251,14 +1268,17 @@ ${rawText}`;
             : `${selectedImageStyle} This image is for a Japanese beauty salon blog article. Title: "${articleTitle}". Summary: "${articleSummary}". The image must visually represent the article content. Professional photography, 4k. STRICT RULE: DO NOT include any text, letters, or characters in the image. No text, no letters, no characters, no writing. Keywords: ${keywordsString}`;
 
           const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-          const imgResponse = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-image',
-            contents: imagePrompt,
-            config: { imageConfig: { aspectRatio: "16:9" } }
-          });
-          const imgPart = imgResponse.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
-          if (imgPart?.inlineData) {
-            imageBase64 = imgPart.inlineData.data;
+          const [imgResp16x9, imgResp1x1, imgResp9x16] = await Promise.all([
+            ai.models.generateContent({ model: 'gemini-2.5-flash-image', contents: imagePrompt, config: { imageConfig: { aspectRatio: "16:9" } } }),
+            ai.models.generateContent({ model: 'gemini-2.5-flash-image', contents: imagePrompt, config: { imageConfig: { aspectRatio: "1:1" } } }),
+            ai.models.generateContent({ model: 'gemini-2.5-flash-image', contents: imagePrompt, config: { imageConfig: { aspectRatio: "9:16" } } }),
+          ]);
+          const getPart = (r: any) => r.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
+          const part16x9 = getPart(imgResp16x9);
+          const part1x1 = getPart(imgResp1x1);
+          const part9x16 = getPart(imgResp9x16);
+          if (part16x9?.inlineData) {
+            imageBase64 = part16x9.inlineData.data;
             if (blogSettings.bannerText) {
               const overlaid = await overlayTextOnImage(imageBase64, blogSettings.bannerText);
               imageUrl = overlaid.url;
@@ -1269,6 +1289,8 @@ ${rawText}`;
           } else {
             imageUrl = 'https://picsum.photos/seed/salon/1200/630';
           }
+          imageUrl1x1 = part1x1?.inlineData ? `data:image/png;base64,${part1x1.inlineData.data}` : '';
+          imageUrl9x16 = part9x16?.inlineData ? `data:image/png;base64,${part9x16.inlineData.data}` : '';
         } catch (e) {
           console.error("Image generation error:", e);
           imageUrl = 'https://picsum.photos/seed/salon/1200/630';
@@ -1285,10 +1307,12 @@ ${rawText}`;
         instaHashtags: blogData.instaHashtags || '',
         threadsCaption: (blogData.threadsCaption || '').replace(/#\S*/g, '').replace(/\s{2,}/g, ' ').trim().substring(0, 280),
         imageUrl,
+        imageUrl1x1: imageUrl1x1 || undefined,
+        imageUrl9x16: imageUrl9x16 || undefined,
         imageBase64: '',
         jsonLd: blogData.jsonLd,
         keywords: keywordsArray,
-        scheduledAt: customTime || new Date(Date.now() + 1000 * 60 * 60).toISOString(), 
+        scheduledAt: customTime || new Date(Date.now() + 1000 * 60 * 60).toISOString(),
         status: 'draft',
         selectedSocialAccounts: blogSettings.socialAccounts.map(a => a.id)
       };
@@ -2172,19 +2196,19 @@ ${rawText}`;
     }
   };
 
-  const postToBlog = async (post: BlogPost, isImmediate: boolean = false, isBulk: boolean = false) => {
-    const hasWpDestination = blogSettings.destinations.includes('blog') || blogSettings.destinations.includes('news');
+  const postToBlog = async (post: BlogPost, isImmediate: boolean = false, isBulk: boolean = false, overrideDestinations?: string[]) => {
+    const dests = overrideDestinations ?? blogSettings.destinations;
+    const hasWpDestination = dests.includes('blog') || dests.includes('news');
 
-    // Check both global settings and post-specific selected accounts
-    const hasInstaDestination = blogSettings.destinations.includes('instagram') ||
-      (post.selectedSocialAccounts && post.selectedSocialAccounts.some(id =>
+    const hasInstaDestination = dests.includes('instagram') ||
+      (!overrideDestinations && post.selectedSocialAccounts && post.selectedSocialAccounts.some(id =>
         blogSettings.socialAccounts.find(a => a.id === id)?.platform === 'instagram'
       ));
 
-    const hasStoryDestination = blogSettings.destinations.includes('instagram_story');
+    const hasStoryDestination = dests.includes('instagram_story');
 
-    const hasThreadsDestination = blogSettings.destinations.includes('threads') ||
-      (post.selectedSocialAccounts && post.selectedSocialAccounts.some(id =>
+    const hasThreadsDestination = dests.includes('threads') ||
+      (!overrideDestinations && post.selectedSocialAccounts && post.selectedSocialAccounts.some(id =>
         blogSettings.socialAccounts.find(a => a.id === id)?.platform === 'threads'
       ));
 
@@ -2246,6 +2270,10 @@ ${rawText}`;
             meta_description: post.metaDescription,
             image_url: (post.imageUrl && !post.imageUrl.startsWith('data:')) ? post.imageUrl : null,
             image_base64: (post.imageUrl && post.imageUrl.startsWith('data:')) ? post.imageUrl.split(',')[1] : null,
+            image_url_1x1: (post.imageUrl1x1 && !post.imageUrl1x1.startsWith('data:')) ? post.imageUrl1x1 : null,
+            image_base64_1x1: (post.imageUrl1x1 && post.imageUrl1x1.startsWith('data:')) ? post.imageUrl1x1.split(',')[1] : null,
+            image_url_9x16: (post.imageUrl9x16 && !post.imageUrl9x16.startsWith('data:')) ? post.imageUrl9x16 : null,
+            image_base64_9x16: (post.imageUrl9x16 && post.imageUrl9x16.startsWith('data:')) ? post.imageUrl9x16.split(',')[1] : null,
             keywords: post.keywords || [],
             insta_caption: instaCaption,
             insta_hashtags: typeof post.instaHashtags === 'string' ? post.instaHashtags : (post.instaHashtags as string[] | undefined)?.join(' ') || null,
@@ -2261,7 +2289,7 @@ ${rawText}`;
             wp_app_password: wpSite?.appPassword || blogSettings.appPassword || null,
             wp_news_slug: wpSite?.newsSlug || blogSettings.newsSlug || 'news',
             wp_category_id: blogSettings.categoryId || null,
-            wp_destinations: blogSettings.destinations.filter((d: string) => ['blog', 'news'].includes(d)),
+            wp_destinations: dests.filter((d: string) => ['blog', 'news'].includes(d)),
             instagram_account_id: instaAcc?.pageId || blogSettings.instagramBusinessId || null,
             instagram_access_token: instaAcc?.accessToken || blogSettings.instagramAccessToken || null,
             threads_user_id: threadsAcc?.pageId || null,
@@ -2291,14 +2319,18 @@ ${rawText}`;
         let wpResult = null;
         let uploadedImageUrl = post.imageUrl;
         let featuredMediaId = 0;
+        let uploadedImageUrl1x1 = '';
+        let featuredMediaId1x1 = 0;
+        let uploadedImageUrl9x16 = '';
+        let featuredMediaId9x16 = 0;
 
-        if ((hasInstaDestination || hasThreadsDestination) && (!blogSettings.username || !blogSettings.appPassword || !blogSettings.targetUrl)) {
+        if ((hasInstaDestination || hasStoryDestination || hasThreadsDestination) && (!blogSettings.username || !blogSettings.appPassword || !blogSettings.targetUrl)) {
            throw new Error("Instagram/Threads投稿には画像を公開するためのサーバー(WordPress)が必要です。設定画面でWordPress情報を正しく入力してください。");
         }
 
-        // Upload image if either WordPress, Instagram, or Threads is a destination
+        // Upload image if either WordPress, Instagram, Story, or Threads is a destination
         // Social media REQUIRES a public URL, so we use WordPress as the host
-        if (hasWpDestination || hasInstaDestination || hasThreadsDestination) {
+        if (hasWpDestination || hasInstaDestination || hasStoryDestination || hasThreadsDestination) {
           const baseUrl = blogSettings.targetUrl.trim();
           
           // Only attempt upload/WP post if we have credentials
@@ -2358,7 +2390,45 @@ ${rawText}`;
                throw new Error("画像のBase64データがありませんでした。一度編集画面で画像を選び直して再度保存してください。");
             }
           }
-          
+
+          // 1b. Upload 1:1 image for Instagram feed (if available)
+          if (hasInstaDestination && post.imageUrl1x1?.startsWith('data:')) {
+            try {
+              const b64_1x1 = post.imageUrl1x1.split(',')[1];
+              const { response: r1x1 } = await wpFetchAuto('/media', {
+                method: 'POST',
+                headers: { 'Authorization': `Basic ${credentials}`, 'Content-Disposition': `attachment; filename="blog-image-${post.id}-1x1.png"`, 'Content-Type': 'image/png' },
+                body: b64_1x1, isBase64: true, signal: controller.signal
+              });
+              if (r1x1.ok) {
+                const d1x1 = await r1x1.json();
+                featuredMediaId1x1 = d1x1.id || 0;
+                uploadedImageUrl1x1 = d1x1.source_url || '';
+              }
+            } catch (e) { console.error("1:1 image upload failed:", e); }
+          } else if (post.imageUrl1x1 && !post.imageUrl1x1.startsWith('data:')) {
+            uploadedImageUrl1x1 = post.imageUrl1x1;
+          }
+
+          // 1c. Upload 9:16 image for Stories (if available)
+          if (hasStoryDestination && post.imageUrl9x16?.startsWith('data:')) {
+            try {
+              const b64_9x16 = post.imageUrl9x16.split(',')[1];
+              const { response: r9x16 } = await wpFetchAuto('/media', {
+                method: 'POST',
+                headers: { 'Authorization': `Basic ${credentials}`, 'Content-Disposition': `attachment; filename="blog-image-${post.id}-9x16.png"`, 'Content-Type': 'image/png' },
+                body: b64_9x16, isBase64: true, signal: controller.signal
+              });
+              if (r9x16.ok) {
+                const d9x16 = await r9x16.json();
+                featuredMediaId9x16 = d9x16.id || 0;
+                uploadedImageUrl9x16 = d9x16.source_url || '';
+              }
+            } catch (e) { console.error("9:16 image upload failed:", e); }
+          } else if (post.imageUrl9x16 && !post.imageUrl9x16.startsWith('data:')) {
+            uploadedImageUrl9x16 = post.imageUrl9x16;
+          }
+
           // 2. WordPress Post Creation (Only if Blog/News is selected)
           if (hasWpDestination) {
             // Get common contents (サロン独自設定 → なければグローバル)
@@ -2521,35 +2591,37 @@ ${rawText}`;
           return c + snsBottomText;
         };
 
-        // Instagram（即時）
-        if (hasInstaDestination && uploadedImageUrl) {
+        // Instagram feed（即時）- 1:1画像を優先
+        const instaImageUrl = uploadedImageUrl1x1 || uploadedImageUrl;
+        if (hasInstaDestination && instaImageUrl) {
           setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, postingMessage: 'Instagramに投稿中...' } : p));
           const instaCaption = buildInstaText(post.instaCaption || `${post.title}\n\n${post.metaDescription}`);
 
           const instaAccounts = blogSettings.socialAccounts.filter((a: SocialAccount) => a.platform === 'instagram');
           if (instaAccounts.length > 0) {
             for (const acc of instaAccounts) {
-              const r = await postToInstagram(uploadedImageUrl, instaCaption, acc);
+              const r = await postToInstagram(instaImageUrl, instaCaption, acc);
               if (!instaResult) instaResult = r;
             }
           } else if (blogSettings.instagramBusinessId && blogSettings.instagramAccessToken) {
-            instaResult = await postToInstagram(uploadedImageUrl, instaCaption, undefined);
+            instaResult = await postToInstagram(instaImageUrl, instaCaption, undefined);
           } else {
             instaResult = { success: false, error: 'Instagram設定が未完了です。「ソーシャルアカウント」でアカウントを登録してください。' };
           }
         }
 
-        // Instagram ストーリーズ（即時）
-        if (hasStoryDestination && uploadedImageUrl) {
+        // Instagram ストーリーズ（即時）- 9:16 → 1:1 → 16:9 の優先順
+        const storyImageUrl = uploadedImageUrl9x16 || uploadedImageUrl1x1 || uploadedImageUrl;
+        if (hasStoryDestination && storyImageUrl) {
           setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, postingMessage: 'Instagramストーリーズに投稿中...' } : p));
           const instaAccounts = blogSettings.socialAccounts.filter((a: SocialAccount) => a.platform === 'instagram');
           if (instaAccounts.length > 0) {
             for (const acc of instaAccounts) {
-              const r = await postToInstagramStory(uploadedImageUrl, acc);
+              const r = await postToInstagramStory(storyImageUrl, acc);
               if (!storyResult) storyResult = r;
             }
           } else if (blogSettings.instagramBusinessId && blogSettings.instagramAccessToken) {
-            storyResult = await postToInstagramStory(uploadedImageUrl, undefined);
+            storyResult = await postToInstagramStory(storyImageUrl, undefined);
           } else {
             storyResult = { success: false, error: 'Instagram設定が未完了です。' };
           }
@@ -2567,11 +2639,13 @@ ${rawText}`;
         }
       }
 
-      // Cleanup: Delete relay image if WordPress was NOT a destination
+      // Cleanup: relay images (1x1 and 9x16 are always relay-only; 16:9 is relay if WP not selected)
       if (!hasWpDestination && featuredMediaId > 0) {
         console.log("Deleting relay image as WordPress was not a destination.");
         await deleteWpMedia(featuredMediaId);
       }
+      if (featuredMediaId1x1 > 0) await deleteWpMedia(featuredMediaId1x1);
+      if (featuredMediaId9x16 > 0) await deleteWpMedia(featuredMediaId9x16);
 
       // Update state based on results
       setBlogPosts(prev => prev.map(p => {
@@ -2712,15 +2786,16 @@ ${rawText}`;
     }
   };
 
-  const saveToSupabase = async (post: BlogPost, loopEnabled: boolean, loopIntervalDays: number, loopTime: string = '') => {
-    setLoopModal(prev => ({ ...prev, saving: true }));
+  const saveToSupabase = async (post: BlogPost, loopEnabled: boolean, loopIntervalDays: number, loopTime: string = '', overrideDestinations?: string[]) => {
+    setPostingModal(prev => ({ ...prev, saving: true }));
     try {
+      const dests = overrideDestinations ?? blogSettings.destinations;
       const wpSite = blogSettings.wpSites?.find((s: WpSite) => s.id === blogSettings.selectedWpSiteId);
-      const instaAccount = blogSettings.socialAccounts.find((a: SocialAccount) => a.platform === 'instagram' && (post.selectedSocialAccounts?.includes(a.id) || blogSettings.destinations.includes('instagram')));
-      const threadsAccount = blogSettings.socialAccounts.find((a: SocialAccount) => a.platform === 'threads' && (post.selectedSocialAccounts?.includes(a.id) || blogSettings.destinations.includes('threads')));
-      const hasWp = blogSettings.destinations.includes('blog') || blogSettings.destinations.includes('news');
-      const hasInsta = !!(instaAccount || (blogSettings.instagramBusinessId && blogSettings.instagramAccessToken));
-      const hasStory = blogSettings.destinations.includes('instagram_story');
+      const instaAccount = blogSettings.socialAccounts.find((a: SocialAccount) => a.platform === 'instagram' && (post.selectedSocialAccounts?.includes(a.id) || dests.includes('instagram')));
+      const threadsAccount = blogSettings.socialAccounts.find((a: SocialAccount) => a.platform === 'threads' && (post.selectedSocialAccounts?.includes(a.id) || dests.includes('threads')));
+      const hasWp = dests.includes('blog') || dests.includes('news');
+      const hasInsta = !!(instaAccount || (dests.includes('instagram') && blogSettings.instagramBusinessId && blogSettings.instagramAccessToken));
+      const hasStory = dests.includes('instagram_story');
       const hasThreads = !!threadsAccount;
 
       const _loopActiveSalon = blogSettings.salonProfiles.find(s => s.id === blogSettings.selectedSalonId);
@@ -2775,6 +2850,10 @@ ${rawText}`;
         meta_description: post.metaDescription,
         image_url: (post.imageUrl && !post.imageUrl.startsWith('data:')) ? post.imageUrl : null,
         image_base64: (post.imageUrl && post.imageUrl.startsWith('data:')) ? post.imageUrl.split(',')[1] : null,
+        image_url_1x1: (post.imageUrl1x1 && !post.imageUrl1x1.startsWith('data:')) ? post.imageUrl1x1 : null,
+        image_base64_1x1: (post.imageUrl1x1 && post.imageUrl1x1.startsWith('data:')) ? post.imageUrl1x1.split(',')[1] : null,
+        image_url_9x16: (post.imageUrl9x16 && !post.imageUrl9x16.startsWith('data:')) ? post.imageUrl9x16 : null,
+        image_base64_9x16: (post.imageUrl9x16 && post.imageUrl9x16.startsWith('data:')) ? post.imageUrl9x16.split(',')[1] : null,
         keywords: post.keywords || [],
         insta_caption: buildLoopInstaCaption(post.instaCaption || `${post.title}\n\n${post.metaDescription}`),
         insta_hashtags: typeof post.instaHashtags === 'string' ? post.instaHashtags : (post.instaHashtags as string[] | undefined)?.join(' ') || null,
@@ -2790,7 +2869,7 @@ ${rawText}`;
         wp_app_password: wpSite?.appPassword || blogSettings.appPassword || null,
         wp_news_slug: wpSite?.newsSlug || blogSettings.newsSlug || 'news',
         wp_category_id: blogSettings.categoryId || null,
-        wp_destinations: blogSettings.destinations.filter((d: string) => ['blog', 'news'].includes(d)),
+        wp_destinations: dests.filter((d: string) => ['blog', 'news'].includes(d)),
         instagram_account_id: instaAccount?.pageId || blogSettings.instagramBusinessId || null,
         instagram_access_token: instaAccount?.accessToken || blogSettings.instagramAccessToken || null,
         threads_user_id: threadsAccount?.pageId || null,
@@ -2808,12 +2887,12 @@ ${rawText}`;
       if (data.error) throw new Error(data.error);
 
       setNotification({ message: `「${post.title}」をSupabaseに予約しました！${loopEnabled ? `（${formatLoopInterval(loopIntervalDays)}ごとにループ）` : ''}`, type: 'success' });
-      setLoopModal({ post: null, loopEnabled: true, loopIntervalDays: 43200, loopTime: '', saving: false });
+      setPostingModal({ post: null, mode: 'immediate', destinations: [], loopEnabled: true, loopIntervalDays: 43200, loopTime: '', saving: false });
       setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, status: 'scheduled' } : p));
       if (showSupabasePanel) fetchSupabasePosts();
     } catch (e: any) {
       setNotification({ message: `Supabase保存エラー: ${e.message}`, type: 'error' });
-      setLoopModal(prev => ({ ...prev, saving: false }));
+      setPostingModal(prev => ({ ...prev, saving: false }));
     }
   };
 
@@ -4577,18 +4656,29 @@ ${rawText}`;
                           className="bg-black/5 border border-black/10 rounded-xl p-4 space-y-4"
                         >
                           <div className="flex gap-4">
-                            {post.imageUrl && (
-                              <div className="relative group/img flex-shrink-0">
-                                <img src={post.imageUrl} className="w-24 h-24 lg:w-32 lg:h-32 object-cover rounded-lg" alt="" />
-                                <button 
-                                  onClick={() => downloadImage(post.imageUrl!, `blog-image-${post.id}.png`)}
-                                  className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center rounded-lg text-white"
-                                  title="画像をダウンロード"
-                                >
-                                  <ImageIcon size={20} />
-                                </button>
-                              </div>
-                            )}
+                            <div className="flex gap-1.5 flex-shrink-0 items-start">
+                              {post.imageUrl && (
+                                <div className="relative group/img">
+                                  <img src={post.imageUrl} className="w-24 h-14 lg:w-32 lg:h-18 object-cover rounded-lg" alt="" title="16:9 (WP・フィード)" />
+                                  <span className="absolute bottom-0.5 left-0.5 text-[6px] bg-black/60 text-white px-1 rounded font-bold">16:9</span>
+                                  <button onClick={() => downloadImage(post.imageUrl!, `blog-image-${post.id}.png`)} className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center rounded-lg text-white" title="ダウンロード"><ImageIcon size={14} /></button>
+                                </div>
+                              )}
+                              {post.imageUrl1x1 && (
+                                <div className="relative group/img">
+                                  <img src={post.imageUrl1x1} className="w-14 h-14 object-cover rounded-lg" alt="" title="1:1 (Instagram)" />
+                                  <span className="absolute bottom-0.5 left-0.5 text-[6px] bg-black/60 text-white px-1 rounded font-bold">1:1</span>
+                                  <button onClick={() => downloadImage(post.imageUrl1x1!, `blog-image-${post.id}-1x1.png`)} className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center rounded-lg text-white" title="ダウンロード"><ImageIcon size={14} /></button>
+                                </div>
+                              )}
+                              {post.imageUrl9x16 && (
+                                <div className="relative group/img">
+                                  <img src={post.imageUrl9x16} className="w-8 h-14 object-cover rounded-lg" alt="" title="9:16 (ストーリー)" />
+                                  <span className="absolute bottom-0.5 left-0.5 text-[6px] bg-black/60 text-white px-1 rounded font-bold">9:16</span>
+                                  <button onClick={() => downloadImage(post.imageUrl9x16!, `blog-image-${post.id}-9x16.png`)} className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center rounded-lg text-white" title="ダウンロード"><ImageIcon size={14} /></button>
+                                </div>
+                              )}
+                            </div>
                             <div className="flex-1 min-w-0 space-y-2">
                               <div className="flex items-center space-x-2">
                                 <h4 className="text-sm font-bold text-black/90 truncate">{post.title}</h4>
@@ -4748,45 +4838,36 @@ ${rawText}`;
                             <div className="flex items-center space-x-3">
                               {post.status !== 'posted' && (
                                 <div className="flex items-center space-x-2">
-                                  <button 
-                                    onClick={() => postToBlog(post, true)}
+                                  <button
+                                    onClick={() => setPostingModal({ post, mode: 'immediate', destinations: [...blogSettings.destinations], loopEnabled: true, loopIntervalDays: 43200, loopTime: '', saving: false })}
                                     disabled={currentlyPostingId === post.id}
                                     className={`text-[10px] flex items-center space-x-1 transition-all px-2 py-1 rounded-md ${
                                       currentlyPostingId === post.id
-                                      ? 'bg-emerald-500/20 text-emerald-400 cursor-not-allowed animate-pulse' 
+                                      ? 'bg-emerald-500/20 text-emerald-400 cursor-not-allowed animate-pulse'
                                       : 'text-emerald-400 hover:bg-emerald-500/10 hover:underline'
                                     }`}
                                   >
-                                    {currentlyPostingId === post.id ? (
-                                      <Loader2 size={12} className="animate-spin" />
-                                    ) : (
-                                      <Play size={10} />
-                                    )}
+                                    {currentlyPostingId === post.id ? <Loader2 size={12} className="animate-spin" /> : <Play size={10} />}
                                     <span>{currentlyPostingId === post.id ? '送信中...' : '今すぐ投稿'}</span>
                                   </button>
 
-                                  <button 
-                                    onClick={() => postToBlog(post, false)}
+                                  <button
+                                    onClick={() => setPostingModal({ post, mode: 'scheduled', destinations: [...blogSettings.destinations], loopEnabled: false, loopIntervalDays: 43200, loopTime: '', saving: false })}
                                     disabled={currentlyPostingId === post.id}
                                     className={`text-[10px] flex items-center space-x-1 transition-all px-2 py-1 rounded-md ${
                                       currentlyPostingId === post.id
-                                      ? 'bg-gold/20 text-gold cursor-not-allowed animate-pulse' 
+                                      ? 'bg-gold/20 text-gold cursor-not-allowed animate-pulse'
                                       : 'text-gold hover:bg-gold/10 hover:underline'
                                     }`}
                                   >
-                                    {currentlyPostingId === post.id ? (
-                                      <Loader2 size={12} className="animate-spin" />
-                                    ) : (
-                                      <Calendar size={10} />
-                                    )}
+                                    {currentlyPostingId === post.id ? <Loader2 size={12} className="animate-spin" /> : <Calendar size={10} />}
                                     <span>{currentlyPostingId === post.id ? '送信中...' : '予約投稿'}</span>
                                   </button>
 
                                   <button
-                                    onClick={() => setLoopModal({ post, loopEnabled: true, loopIntervalDays: 43200, loopTime: '', saving: false })}
+                                    onClick={() => setPostingModal({ post, mode: 'loop', destinations: [...blogSettings.destinations], loopEnabled: true, loopIntervalDays: 43200, loopTime: '', saving: false })}
                                     disabled={currentlyPostingId === post.id}
                                     className="text-[10px] flex items-center space-x-1 transition-all px-2 py-1 rounded-md text-purple-400 hover:bg-purple-500/10 hover:underline"
-                                    title="Supabaseに保存してサーバー側で自動投稿（ループ対応）"
                                   >
                                     <RefreshCw size={10} />
                                     <span>ループ予約</span>
@@ -4969,131 +5050,139 @@ ${rawText}`;
             </div>
         </main>
 
-      {/* Loop modal */}
+      {/* Posting modal - 投稿先選択 + モード選択 */}
       <AnimatePresence>
-        {loopModal.post && (
+        {postingModal.post && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-            onClick={() => !loopModal.saving && setLoopModal(prev => ({ ...prev, post: null }))}
+            onClick={() => !postingModal.saving && setPostingModal(prev => ({ ...prev, post: null }))}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl space-y-5"
+              className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl space-y-4 overflow-y-auto max-h-[90vh]"
               onClick={e => e.stopPropagation()}
             >
+              {/* Header */}
               <div className="flex items-center justify-between">
-                <h3 className="font-bold text-sm text-purple-700 flex items-center space-x-2">
-                  <RefreshCw size={16} />
-                  <span>Supabaseループ予約</span>
+                <h3 className="font-bold text-sm flex items-center space-x-2" style={{ color: postingModal.mode === 'loop' ? '#7c3aed' : postingModal.mode === 'scheduled' ? '#c5a059' : '#10b981' }}>
+                  {postingModal.mode === 'loop' ? <RefreshCw size={16} /> : postingModal.mode === 'scheduled' ? <Calendar size={16} /> : <Play size={16} />}
+                  <span>{postingModal.mode === 'loop' ? 'ループ予約' : postingModal.mode === 'scheduled' ? '予約投稿' : '今すぐ投稿'}</span>
                 </h3>
-                <button onClick={() => setLoopModal(prev => ({ ...prev, post: null }))} className="text-black/30 hover:text-black/60">
-                  <X size={18} />
-                </button>
+                <button onClick={() => setPostingModal(prev => ({ ...prev, post: null }))} className="text-black/30 hover:text-black/60"><X size={18} /></button>
               </div>
 
-              <p className="text-xs text-black/60 bg-purple-50 rounded-xl px-3 py-2 truncate">
-                「{loopModal.post.title}」
-              </p>
+              <p className="text-xs text-black/60 bg-black/5 rounded-xl px-3 py-2 truncate">「{postingModal.post.title}」</p>
 
-              <div className="space-y-1">
-                <label className="text-[10px] text-black/40 uppercase font-bold">投稿予定日時</label>
-                <p className="text-sm font-semibold text-black/80">
-                  {new Date(loopModal.post.scheduledAt).toLocaleString('ja-JP')}
-                </p>
+              {/* Mode tabs */}
+              <div className="flex space-x-1 bg-black/5 rounded-xl p-1">
+                {(['immediate', 'scheduled', 'loop'] as const).map(m => (
+                  <button key={m} onClick={() => setPostingModal(prev => ({ ...prev, mode: m }))}
+                    className={`flex-1 text-[10px] font-bold py-1.5 rounded-lg transition-all ${postingModal.mode === m ? 'bg-white shadow text-black' : 'text-black/40 hover:text-black/60'}`}>
+                    {m === 'immediate' ? '即時投稿' : m === 'scheduled' ? '予約投稿' : 'ループ予約'}
+                  </button>
+                ))}
               </div>
 
+              {/* 投稿先選択 */}
               <div className="space-y-2">
-                <label className="flex items-center space-x-3 cursor-pointer">
-                  <div
-                    onClick={() => setLoopModal(prev => ({ ...prev, loopEnabled: !prev.loopEnabled }))}
-                    className={`w-10 h-6 rounded-full relative transition-colors ${loopModal.loopEnabled ? 'bg-purple-500' : 'bg-black/20'}`}
-                  >
-                    <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${loopModal.loopEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold text-black/80">ループ投稿を有効にする</p>
-                    <p className="text-[10px] text-black/40">投稿後に同じ記事を自動で再予約</p>
-                  </div>
-                </label>
+                <label className="text-[10px] text-black/40 uppercase font-bold tracking-widest">投稿先を選ぶ</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'blog', label: 'WP 投稿', sub: 'ブログ' },
+                    { id: 'news', label: 'WP お知らせ', sub: 'ニュース' },
+                    { id: 'instagram', label: 'Instagram', sub: 'フィード (1:1)' },
+                    { id: 'instagram_story', label: 'ストーリー', sub: 'Story (9:16)' },
+                    { id: 'threads', label: 'Threads', sub: 'スレッズ' },
+                  ].map(({ id, label, sub }) => {
+                    const isSelected = postingModal.destinations.includes(id);
+                    return (
+                      <button key={id}
+                        onClick={() => {
+                          const newDests = isSelected ? postingModal.destinations.filter(d => d !== id) : [...postingModal.destinations, id];
+                          setPostingModal(prev => ({ ...prev, destinations: newDests }));
+                        }}
+                        className="rounded-xl flex flex-col items-start px-3 py-2 gap-0.5 transition-all text-left"
+                        style={isSelected ? { background: 'rgba(197,160,89,0.12)', border: '2px solid #c5a059', color: '#c5a059' } : { background: '#f5f5f5', border: '2px solid rgba(0,0,0,0.08)', color: 'rgba(0,0,0,0.35)' }}
+                      >
+                        <span className="text-[10px] font-bold">{label}</span>
+                        <span className="text-[8px] opacity-70">{sub}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
-                {loopModal.loopEnabled && (
-                  <div className="space-y-3 pl-13">
-                    <div className="space-y-1">
+              {/* ループ設定（ループモード時のみ） */}
+              {postingModal.mode === 'loop' && (
+                <div className="space-y-3 border border-purple-100 rounded-xl p-3">
+                  <label className="flex items-center space-x-3 cursor-pointer">
+                    <div onClick={() => setPostingModal(prev => ({ ...prev, loopEnabled: !prev.loopEnabled }))}
+                      className={`w-10 h-6 rounded-full relative transition-colors ${postingModal.loopEnabled ? 'bg-purple-500' : 'bg-black/20'}`}>
+                      <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${postingModal.loopEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-black/80">ループ投稿を有効にする</p>
+                      <p className="text-[10px] text-black/40">投稿後に自動で再予約</p>
+                    </div>
+                  </label>
+                  {postingModal.loopEnabled && (
+                    <div className="space-y-2 pl-3">
                       <label className="text-[10px] text-black/40 uppercase font-bold">ループ間隔</label>
-                      <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                        {[
-                          { label: '10分(テスト)', value: 10 },
-                          { label: '1日', value: 1440 },
-                          { label: '7日', value: 10080 },
-                          { label: '30日', value: 43200 },
-                          { label: '60日', value: 86400 },
-                        ].map(opt => (
-                          <button
-                            key={opt.value}
-                            onClick={() => setLoopModal(prev => ({ ...prev, loopIntervalDays: opt.value }))}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
-                              loopModal.loopIntervalDays === opt.value
-                                ? 'bg-purple-500 text-white border-purple-500'
-                                : 'bg-white text-black/50 border-black/10 hover:border-purple-300'
-                            }`}
-                          >
+                      <div className="flex flex-wrap gap-1">
+                        {[{ label: '10分(テスト)', value: 10 }, { label: '1日', value: 1440 }, { label: '7日', value: 10080 }, { label: '30日', value: 43200 }, { label: '60日', value: 86400 }].map(opt => (
+                          <button key={opt.value} onClick={() => setPostingModal(prev => ({ ...prev, loopIntervalDays: opt.value }))}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${postingModal.loopIntervalDays === opt.value ? 'bg-purple-500 text-white border-purple-500' : 'bg-white text-black/50 border-black/10 hover:border-purple-300'}`}>
                             {opt.label}
                           </button>
                         ))}
                       </div>
-                      <p className="text-[10px] text-purple-500 mt-1">
-                        月300記事 → 1日10記事 × 30日間隔
-                      </p>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-black/40 uppercase font-bold">投稿時刻（任意）</label>
+                      <p className="text-[10px] text-purple-500">月300記事 → 1日10記事 × 30日間隔</p>
                       <div className="flex items-center space-x-2">
-                        <input
-                          type="time"
-                          value={loopModal.loopTime}
-                          onChange={e => setLoopModal(prev => ({ ...prev, loopTime: e.target.value }))}
-                          className="bg-white border border-black/10 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-purple-400"
-                        />
-                        {loopModal.loopTime && (
-                          <button
-                            onClick={() => setLoopModal(prev => ({ ...prev, loopTime: '' }))}
-                            className="text-[10px] text-black/30 hover:text-red-400"
-                          >クリア</button>
-                        )}
+                        <label className="text-[10px] text-black/40 font-bold">投稿時刻（任意）</label>
+                        <input type="time" value={postingModal.loopTime}
+                          onChange={e => setPostingModal(prev => ({ ...prev, loopTime: e.target.value }))}
+                          className="bg-white border border-black/10 rounded-lg px-2 py-1.5 text-xs" />
+                        {postingModal.loopTime && <button onClick={() => setPostingModal(prev => ({ ...prev, loopTime: '' }))} className="text-[10px] text-black/30 hover:text-red-400">クリア</button>}
                       </div>
-                      <p className="text-[10px] text-black/30 leading-tight">
-                        {loopModal.loopTime
-                          ? `毎回 ${loopModal.loopTime} に投稿されます。夜中でも起きていなくてOK。`
-                          : '空欄 = 元の投稿時刻を引き継ぐ'}
-                      </p>
+                      <p className="text-[10px] text-black/30">{postingModal.loopTime ? `毎回 ${postingModal.loopTime} に投稿` : '空欄 = 元の時刻を引き継ぐ'}</p>
+                      <p className="text-[10px] text-black/40">✓ {formatLoopInterval(postingModal.loopIntervalDays)}ごとに自動再投稿</p>
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
 
-              <div className="bg-black/5 rounded-xl p-3 text-[10px] text-black/50 space-y-1">
-                <p>✓ サーバーが1分ごとに自動チェック・投稿</p>
-                <p>✓ WP・Instagram・Threads に同時投稿</p>
-                {loopModal.loopEnabled && <p>✓ {formatLoopInterval(loopModal.loopIntervalDays)}ごとに同じ記事を再投稿{loopModal.loopTime ? `（毎回 ${loopModal.loopTime}）` : ''}</p>}
-              </div>
-
+              {/* 確定ボタン */}
               <button
-                onClick={() => loopModal.post && saveToSupabase(loopModal.post, loopModal.loopEnabled, loopModal.loopIntervalDays, loopModal.loopTime)}
-                disabled={loopModal.saving}
+                onClick={() => {
+                  if (!postingModal.post || postingModal.saving) return;
+                  if (postingModal.mode === 'loop') {
+                    saveToSupabase(postingModal.post, postingModal.loopEnabled, postingModal.loopIntervalDays, postingModal.loopTime, postingModal.destinations);
+                  } else {
+                    const p = postingModal.post;
+                    const dests = postingModal.destinations;
+                    const isNow = postingModal.mode === 'immediate';
+                    setPostingModal(prev => ({ ...prev, post: null }));
+                    postToBlog(p, isNow, false, dests);
+                  }
+                }}
+                disabled={postingModal.saving || postingModal.destinations.length === 0}
                 className={`w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center space-x-2 ${
-                  loopModal.saving
-                    ? 'bg-purple-200 text-purple-400 cursor-not-allowed'
-                    : 'bg-purple-600 text-white hover:bg-purple-700 shadow-lg shadow-purple-200'
+                  postingModal.saving || postingModal.destinations.length === 0
+                    ? 'bg-black/10 text-black/30 cursor-not-allowed'
+                    : postingModal.mode === 'loop'
+                      ? 'bg-purple-600 text-white hover:bg-purple-700 shadow-lg shadow-purple-200'
+                      : postingModal.mode === 'scheduled'
+                        ? 'bg-amber-500 text-white hover:bg-amber-600 shadow-lg'
+                        : 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg'
                 }`}
               >
-                {loopModal.saving ? <Loader2 size={16} className="animate-spin" /> : <Database size={16} />}
-                <span>{loopModal.saving ? '保存中...' : 'Supabaseに予約する'}</span>
+                {postingModal.saving ? <Loader2 size={16} className="animate-spin" /> : postingModal.mode === 'loop' ? <Database size={16} /> : postingModal.mode === 'scheduled' ? <Calendar size={16} /> : <Play size={16} />}
+                <span>{postingModal.saving ? '処理中...' : postingModal.destinations.length === 0 ? '投稿先を選んでください' : postingModal.mode === 'loop' ? 'Supabaseに予約する' : postingModal.mode === 'scheduled' ? '予約する' : '今すぐ投稿する'}</span>
               </button>
             </motion.div>
           </motion.div>

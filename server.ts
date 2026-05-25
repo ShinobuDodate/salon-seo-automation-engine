@@ -275,7 +275,7 @@ async function processScheduledPost(post: any) {
 
     // 4. Loop: create next occurrence
     if (post.loop_enabled && post.loop_interval_days > 0 && hasSuccess) {
-      const nextDate = new Date(new Date(post.scheduled_at).getTime() + post.loop_interval_days * 24 * 60 * 60 * 1000);
+      const nextDate = new Date(new Date(post.scheduled_at).getTime() + post.loop_interval_days * 60 * 1000);
       const { id, created_at, published_at, status, wp_post_id, instagram_post_id, threads_post_id, error_message, loop_count, image_base64, ...rest } = post;
       await supabase.from('scheduled_posts').insert({
         ...rest,

@@ -176,41 +176,81 @@ async function publishToThreads(imageUrl: string | null, caption: string, userId
   } catch (e: any) { return { success: false, error: e.message } }
 }
 
+// --- WP media only upload (for relay) ---
+async function uploadImageToWordPress(post: any, base64: string, filename: string): Promise<string> {
+  const base = post.wp_url.trim().replace(/\/$/, '')
+  const credentials = btoa(`${post.wp_username.trim()}:${post.wp_app_password.replace(/\s+/g, '')}`)
+  const authHeader = { 'Authorization': `Basic ${credentials}` }
+  const imageBuffer = new Uint8Array(atob(base64).split('').map(c => c.charCodeAt(0)))
+  const headers = { ...authHeader, 'Content-Disposition': `attachment; filename="${filename}"`, 'Content-Type': 'image/png' }
+  for (const url of [`${base}/wp-json/wp/v2/media`, `${base}/index.php?rest_route=/wp/v2/media`]) {
+    try {
+      const r = await fetch(url, { method: 'POST', headers, body: imageBuffer })
+      if (r?.ok) {
+        const d = await r.json()
+        return d.source_url || ''
+      }
+    } catch {}
+  }
+  return ''
+}
+
 // --- 1件の予約投稿を処理 ---
 async function processScheduledPost(post: any) {
   await supabase.from('scheduled_posts').update({ status: 'publishing' }).eq('id', post.id)
 
   let imageUrl = (post.image_url && !post.image_url.startsWith('data:')) ? post.image_url : ''
+  let imageUrl1x1 = (post.image_url_1x1 && !post.image_url_1x1.startsWith('data:')) ? post.image_url_1x1 : ''
+  let imageUrl9x16 = (post.image_url_9x16 && !post.image_url_9x16.startsWith('data:')) ? post.image_url_9x16 : ''
   let wpPostId: number | undefined
   let instagramPostId: string | undefined
   let threadsPostId: string | undefined
   const errors: string[] = []
 
   try {
-    // 1. WordPress
+    // 1. WordPress (記事公開 + 16:9画像アップロード)
     if (post.post_to_wp && post.wp_url && post.wp_username && post.wp_app_password) {
       const wpResult = await publishToWordPress(post)
       if (wpResult.success) wpPostId = wpResult.wpPostId
       else errors.push(`WP: ${wpResult.error}`)
       if (wpResult.imageUrl) imageUrl = wpResult.imageUrl
     } else if (!imageUrl && post.image_base64 && post.wp_url && post.wp_username && post.wp_app_password) {
-      const imgResult = await publishToWordPress({ ...post, post_to_wp: false })
-      if (imgResult.imageUrl) imageUrl = imgResult.imageUrl
+      // WP投稿なし・base64画像あり → 公開URLが必要なのでメディアのみアップロード
+      const uploaded = await uploadImageToWordPress(post, post.image_base64, `blog-image-${post.id}.png`)
+      if (uploaded) imageUrl = uploaded
     }
 
-    // 2. Instagram
-    if (post.post_to_instagram && post.instagram_account_id && post.instagram_access_token && imageUrl) {
+    // 1b. 1:1画像アップロード（Instagramフィード用）
+    if (post.post_to_instagram && post.wp_url && post.wp_username && post.wp_app_password) {
+      if (!imageUrl1x1 && post.image_base64_1x1) {
+        const uploaded = await uploadImageToWordPress(post, post.image_base64_1x1, `blog-image-${post.id}-1x1.png`)
+        if (uploaded) imageUrl1x1 = uploaded
+      }
+    }
+
+    // 1c. 9:16画像アップロード（ストーリー用）
+    if (post.post_to_instagram_story && post.wp_url && post.wp_username && post.wp_app_password) {
+      if (!imageUrl9x16 && post.image_base64_9x16) {
+        const uploaded = await uploadImageToWordPress(post, post.image_base64_9x16, `blog-image-${post.id}-9x16.png`)
+        if (uploaded) imageUrl9x16 = uploaded
+      }
+    }
+
+    // 2. Instagram feed（1:1 → 16:9 の優先順）
+    const instaImageUrl = imageUrl1x1 || imageUrl
+    if (post.post_to_instagram && post.instagram_account_id && post.instagram_access_token && instaImageUrl) {
       const caption = post.insta_hashtags
         ? `${post.insta_caption || post.title}\n\n${post.insta_hashtags}`.trim()
         : (post.insta_caption || post.title).trim()
-      const r = await publishToInstagram(imageUrl, caption, post.instagram_account_id, post.instagram_access_token)
+      const r = await publishToInstagram(instaImageUrl, caption, post.instagram_account_id, post.instagram_access_token)
       if (r.success) instagramPostId = r.postId
       else errors.push(`Instagram: ${r.error}`)
     }
 
-    // 2b. Instagram Stories
-    if (post.post_to_instagram_story && post.instagram_account_id && post.instagram_access_token && imageUrl) {
-      const r = await publishToInstagramStory(imageUrl, post.instagram_account_id, post.instagram_access_token)
+    // 2b. Instagram Stories（9:16 → 1:1 → 16:9 の優先順）
+    const storyImageUrl = imageUrl9x16 || imageUrl1x1 || imageUrl
+    if (post.post_to_instagram_story && post.instagram_account_id && post.instagram_access_token && storyImageUrl) {
+      const r = await publishToInstagramStory(storyImageUrl, post.instagram_account_id, post.instagram_access_token)
       if (!r.success) errors.push(`ストーリーズ: ${r.error}`)
       else if (!instagramPostId) instagramPostId = r.postId
     }
@@ -238,7 +278,7 @@ async function processScheduledPost(post: any) {
 
     // 4. ループ：次回の予約を作成（loop_interval_days日後）
     if (post.loop_enabled && post.loop_interval_days > 0 && hasSuccess) {
-      const nextDate = new Date(new Date(post.scheduled_at).getTime() + post.loop_interval_days * 24 * 60 * 60 * 1000)
+      const nextDate = new Date(new Date(post.scheduled_at).getTime() + post.loop_interval_days * 60 * 1000)
       const { id, created_at, published_at, status, wp_post_id, instagram_post_id, threads_post_id, error_message, loop_count, image_base64, ...rest } = post
       await supabase.from('scheduled_posts').insert({
         ...rest,
