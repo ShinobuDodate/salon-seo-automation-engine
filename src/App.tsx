@@ -5089,7 +5089,7 @@ ${rawText}`;
                     <div className="space-y-2 pl-3">
                       <label className="text-[10px] text-black/40 uppercase font-bold">ループ間隔</label>
                       <div className="flex flex-wrap gap-1">
-                        {[{ label: '10分(テスト)', value: 10 }, { label: '1日', value: 1440 }, { label: '7日', value: 10080 }, { label: '30日', value: 43200 }, { label: '60日', value: 86400 }].map(opt => (
+                        {[{ label: '10分(テスト)', value: 10 }, { label: '1時間', value: 60 }, { label: '1日', value: 1440 }, { label: '7日', value: 10080 }, { label: '30日', value: 43200 }, { label: '60日', value: 86400 }].map(opt => (
                           <button key={opt.value} onClick={() => setPostingModal(prev => ({ ...prev, loopIntervalDays: opt.value }))}
                             className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${postingModal.loopIntervalDays === opt.value ? 'bg-purple-500 text-white border-purple-500' : 'bg-white text-black/50 border-black/10 hover:border-purple-300'}`}>
                             {opt.label}
