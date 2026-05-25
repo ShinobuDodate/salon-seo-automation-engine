@@ -58,6 +58,8 @@ interface BlogPost {
   imageUrl?: string;     // 16:9
   imageUrl1x1?: string;  // 1:1 (Instagram feed)
   imageUrl9x16?: string; // 9:16 (Instagram Stories)
+  instaFeedRatio?: '1:1' | '9:16';   // フィード用画像サイズ選択（デフォルト1:1）
+  instaStoryRatio?: '9:16' | '1:1';  // ストーリー用画像サイズ選択（デフォルト9:16）
   imageBase64?: string;
   keywords: string[];
   scheduledAt: string;
@@ -2322,6 +2324,8 @@ ${rawText}`;
         let featuredMediaId1x1 = 0;
         let uploadedImageUrl9x16 = '';
         let featuredMediaId9x16 = 0;
+        const feedRatio = post.instaFeedRatio || '1:1';
+        const storyRatio = post.instaStoryRatio || '9:16';
 
         if ((hasInstaDestination || hasStoryDestination || hasThreadsDestination) && (!blogSettings.username || !blogSettings.appPassword || !blogSettings.targetUrl)) {
            throw new Error("Instagram/Threads投稿には画像を公開するためのサーバー(WordPress)が必要です。設定画面でWordPress情報を正しく入力してください。");
@@ -2391,7 +2395,9 @@ ${rawText}`;
           }
 
           // 1b. Upload 1:1 image for Instagram feed (if available)
-          if (hasInstaDestination && post.imageUrl1x1?.startsWith('data:')) {
+          const need1x1Upload = (hasInstaDestination && feedRatio === '1:1') || (hasStoryDestination && storyRatio === '1:1');
+          const need9x16Upload = (hasInstaDestination && feedRatio === '9:16') || (hasStoryDestination && storyRatio === '9:16');
+          if (need1x1Upload && post.imageUrl1x1?.startsWith('data:')) {
             try {
               const b64_1x1 = post.imageUrl1x1.split(',')[1];
               const { response: r1x1 } = await wpFetchAuto('/media', {
@@ -2410,7 +2416,7 @@ ${rawText}`;
           }
 
           // 1c. Upload 9:16 image for Stories (if available)
-          if (hasStoryDestination && post.imageUrl9x16?.startsWith('data:')) {
+          if (need9x16Upload && post.imageUrl9x16?.startsWith('data:')) {
             try {
               const b64_9x16 = post.imageUrl9x16.split(',')[1];
               const { response: r9x16 } = await wpFetchAuto('/media', {
@@ -2591,7 +2597,7 @@ ${rawText}`;
         };
 
         // Instagram feed（即時）- 1:1画像を優先
-        const instaImageUrl = uploadedImageUrl1x1 || uploadedImageUrl;
+        const instaImageUrl = feedRatio === '1:1' ? (uploadedImageUrl1x1 || uploadedImageUrl) : (uploadedImageUrl9x16 || uploadedImageUrl);
         if (hasInstaDestination && instaImageUrl) {
           setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, postingMessage: 'Instagramに投稿中...' } : p));
           const instaCaption = buildInstaText(post.instaCaption || `${post.title}\n\n${post.metaDescription}`);
@@ -2610,7 +2616,7 @@ ${rawText}`;
         }
 
         // Instagram ストーリーズ（即時）- 9:16 → 1:1 → 16:9 の優先順
-        const storyImageUrl = uploadedImageUrl9x16 || uploadedImageUrl1x1 || uploadedImageUrl;
+        const storyImageUrl = storyRatio === '9:16' ? (uploadedImageUrl9x16 || uploadedImageUrl1x1 || uploadedImageUrl) : (uploadedImageUrl1x1 || uploadedImageUrl9x16 || uploadedImageUrl);
         if (hasStoryDestination && storyImageUrl) {
           setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, postingMessage: 'Instagramストーリーズに投稿中...' } : p));
           const instaAccounts = blogSettings.socialAccounts.filter((a: SocialAccount) => a.platform === 'instagram');
@@ -4678,6 +4684,31 @@ ${rawText}`;
                                 </div>
                               )}
                             </div>
+                            {/* フィード・ストーリー用サイズ選択（1:1と9:16両方ある場合のみ表示） */}
+                            {post.imageUrl1x1 && post.imageUrl9x16 && (
+                              <div className="space-y-1 pt-1">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[8px] text-black/40 w-14 shrink-0">フィード用</span>
+                                  {(['1:1', '9:16'] as const).map(r => (
+                                    <button key={r}
+                                      onClick={() => setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, instaFeedRatio: r } : p))}
+                                      className={`text-[8px] font-bold px-2 py-0.5 rounded-md border transition-all ${(post.instaFeedRatio || '1:1') === r ? 'bg-gold text-white border-gold' : 'bg-white text-black/40 border-black/15 hover:border-gold/50'}`}>
+                                      {r}
+                                    </button>
+                                  ))}
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[8px] text-black/40 w-14 shrink-0">ストーリー用</span>
+                                  {(['9:16', '1:1'] as const).map(r => (
+                                    <button key={r}
+                                      onClick={() => setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, instaStoryRatio: r } : p))}
+                                      className={`text-[8px] font-bold px-2 py-0.5 rounded-md border transition-all ${(post.instaStoryRatio || '9:16') === r ? 'bg-gold text-white border-gold' : 'bg-white text-black/40 border-black/15 hover:border-gold/50'}`}>
+                                      {r}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                             <div className="flex-1 min-w-0 space-y-2">
                               <div className="flex items-center space-x-2">
                                 <h4 className="text-sm font-bold text-black/90 truncate">{post.title}</h4>
