@@ -4706,6 +4706,21 @@ ${rawText}`;
                                   ))}
                                 </div>
                               )}
+                              {/* 投稿先バッジ */}
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {(blogSettings.destinations.includes('blog') || blogSettings.destinations.includes('news')) && (
+                                  <span className="text-[7px] bg-black/10 text-black/50 px-1.5 py-0.5 rounded font-bold">WP</span>
+                                )}
+                                {blogSettings.destinations.includes('instagram') && (
+                                  <span className="text-[7px] bg-pink-100 text-pink-500 px-1.5 py-0.5 rounded font-bold">Instaフィード</span>
+                                )}
+                                {blogSettings.destinations.includes('instagram_story') && (
+                                  <span className="text-[7px] bg-orange-100 text-orange-500 px-1.5 py-0.5 rounded font-bold">ストーリー</span>
+                                )}
+                                {blogSettings.destinations.includes('threads') && (
+                                  <span className="text-[7px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-bold">スレッズ</span>
+                                )}
+                              </div>
                             </div>
 
                             {/* 右列: タイトル + プレビュー */}
@@ -4971,8 +4986,9 @@ ${rawText}`;
                                 </span>
                               )}
                               {sp.post_to_wp && <span className="text-[10px] text-black/30">WP</span>}
-                              {sp.post_to_instagram && <span className="text-[10px] text-black/30">Insta</span>}
-                              {sp.post_to_threads && <span className="text-[10px] text-black/30">Threads</span>}
+                              {sp.post_to_instagram && <span className="text-[10px] text-pink-400">Instaフィード</span>}
+                              {sp.post_to_instagram_story && <span className="text-[10px] text-orange-400">ストーリー</span>}
+                              {sp.post_to_threads && <span className="text-[10px] text-black/30">スレッズ</span>}
                             </div>
                             {sp.error_message && (
                               <p className="text-[10px] text-red-400 mt-0.5 truncate">{sp.error_message}</p>
@@ -5070,6 +5086,28 @@ ${rawText}`;
                     {m === 'scheduled' ? '予約投稿' : 'ループ予約'}
                   </button>
                 ))}
+              </div>
+
+              {/* 投稿先確認 */}
+              <div className="bg-black/3 rounded-xl px-3 py-2">
+                <p className="text-[9px] text-black/40 font-bold mb-1.5">投稿先</p>
+                <div className="flex flex-wrap gap-1">
+                  {(blogSettings.destinations.includes('blog') || blogSettings.destinations.includes('news')) && (
+                    <span className="text-[8px] bg-black/10 text-black/50 px-2 py-0.5 rounded-full font-bold">WP</span>
+                  )}
+                  {blogSettings.destinations.includes('instagram') && (
+                    <span className="text-[8px] bg-pink-100 text-pink-500 px-2 py-0.5 rounded-full font-bold">Instaフィード</span>
+                  )}
+                  {blogSettings.destinations.includes('instagram_story') && (
+                    <span className="text-[8px] bg-orange-100 text-orange-500 px-2 py-0.5 rounded-full font-bold">Instaストーリー</span>
+                  )}
+                  {blogSettings.destinations.includes('threads') && (
+                    <span className="text-[8px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-bold">スレッズ</span>
+                  )}
+                  {blogSettings.destinations.length === 0 && (
+                    <span className="text-[8px] text-red-400 font-bold">投稿先が設定されていません</span>
+                  )}
+                </div>
               </div>
 
               {/* ループ設定（ループモード時のみ） */}
