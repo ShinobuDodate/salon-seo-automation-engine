@@ -2826,14 +2826,8 @@ ${rawText}`;
       let firstScheduledAt = post.scheduledAt;
       if (loopEnabled) {
         if (loopTime) {
-          // 時刻指定あり: 今日または明日の指定時刻を初回にする
-          const [hh, mm] = loopTime.split(':').map(Number);
-          const candidate = new Date();
-          candidate.setHours(hh, mm, 0, 0);
-          if (candidate.getTime() <= Date.now()) {
-            candidate.setDate(candidate.getDate() + 1); // 今日の時刻が過去なら明日
-          }
-          firstScheduledAt = candidate.toISOString();
+          // 日時指定あり: その日時を初回にする
+          firstScheduledAt = new Date(loopTime).toISOString();
         } else if (new Date(post.scheduledAt).getTime() <= Date.now()) {
           // 時刻指定なし・元の予約が過去 → 今 + 1インターバル
           firstScheduledAt = new Date(Date.now() + loopIntervalDays * 60 * 1000).toISOString();
@@ -5098,13 +5092,13 @@ ${rawText}`;
                       </div>
                       <p className="text-[10px] text-purple-500">月300記事 → 1日10記事 × 30日間隔</p>
                       <div className="flex items-center space-x-2">
-                        <label className="text-[10px] text-black/40 font-bold">投稿時刻（任意）</label>
-                        <input type="time" value={postingModal.loopTime}
+                        <label className="text-[10px] text-black/40 font-bold">初回投稿日時（任意）</label>
+                        <input type="datetime-local" value={postingModal.loopTime}
                           onChange={e => setPostingModal(prev => ({ ...prev, loopTime: e.target.value }))}
                           className="bg-white border border-black/10 rounded-lg px-2 py-1.5 text-xs" />
                         {postingModal.loopTime && <button onClick={() => setPostingModal(prev => ({ ...prev, loopTime: '' }))} className="text-[10px] text-black/30 hover:text-red-400">クリア</button>}
                       </div>
-                      <p className="text-[10px] text-black/30">{postingModal.loopTime ? `毎回 ${postingModal.loopTime} に投稿` : '空欄 = 元の時刻を引き継ぐ'}</p>
+                      <p className="text-[10px] text-black/30">{postingModal.loopTime ? `初回: ${new Date(postingModal.loopTime).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : '空欄 = 今 + インターバルで自動計算'}</p>
                       <p className="text-[10px] text-black/40">✓ {formatLoopInterval(postingModal.loopIntervalDays)}ごとに自動再投稿</p>
                     </div>
                   )}
