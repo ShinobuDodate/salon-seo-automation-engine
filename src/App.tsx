@@ -1230,15 +1230,13 @@ ${rawText}`;
               { inlineData: { data: editData, mimeType: editMimeType } },
               { text: imagePrompt }
             ]},
-            config: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: ratio } }
+            config: { imageConfig: { aspectRatio: ratio } }
           });
-          const [editResult16x9, editResult1x1] = await Promise.allSettled([
-            makeEditParts("16:9"), makeEditParts("1:1")
+          const [editResp16x9, editResp1x1, editResp9x16] = await Promise.all([
+            makeEditParts("16:9"), makeEditParts("1:1"), makeEditParts("9:16")
           ]);
-          const [editResult9x16] = await Promise.allSettled([makeEditParts("9:16")]);
-          const getPart = (r: PromiseSettledResult<any>) =>
-            r.status === 'fulfilled' ? r.value?.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData) : null;
-          const editPart16x9 = getPart(editResult16x9);
+          const getPart = (r: any) => r.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
+          const editPart16x9 = getPart(editResp16x9);
           if (editPart16x9?.inlineData) {
             imageBase64 = editPart16x9.inlineData.data;
             if (blogSettings.bannerText) {
@@ -1252,8 +1250,8 @@ ${rawText}`;
             imageUrl = selectedImage;
             imageBase64 = editData;
           }
-          const editPart1x1 = getPart(editResult1x1);
-          const editPart9x16 = getPart(editResult9x16);
+          const editPart1x1 = getPart(editResp1x1);
+          const editPart9x16 = getPart(editResp9x16);
           imageUrl1x1 = editPart1x1?.inlineData ? `data:image/png;base64,${editPart1x1.inlineData.data}` : '';
           imageUrl9x16 = editPart9x16?.inlineData ? `data:image/png;base64,${editPart9x16.inlineData.data}` : '';
         } catch (e) {
@@ -1271,18 +1269,15 @@ ${rawText}`;
             : `${selectedImageStyle} This image is for a Japanese beauty salon blog article. Title: "${articleTitle}". Summary: "${articleSummary}". The image must visually represent the article content. Professional photography, 4k. STRICT RULE: DO NOT include any text, letters, or characters in the image. No text, no letters, no characters, no writing. Keywords: ${keywordsString}`;
 
           const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-          const [imgResult16x9, imgResult1x1] = await Promise.allSettled([
-            ai.models.generateContent({ model: 'gemini-2.5-flash-image', contents: imagePrompt, config: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: "16:9" } } }),
-            ai.models.generateContent({ model: 'gemini-2.5-flash-image', contents: imagePrompt, config: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: "1:1" } } }),
+          const [imgResp16x9, imgResp1x1, imgResp9x16] = await Promise.all([
+            ai.models.generateContent({ model: 'gemini-2.5-flash-image', contents: imagePrompt, config: { imageConfig: { aspectRatio: "16:9" } } }),
+            ai.models.generateContent({ model: 'gemini-2.5-flash-image', contents: imagePrompt, config: { imageConfig: { aspectRatio: "1:1" } } }),
+            ai.models.generateContent({ model: 'gemini-2.5-flash-image', contents: imagePrompt, config: { imageConfig: { aspectRatio: "9:16" } } }),
           ]);
-          const [imgResult9x16] = await Promise.allSettled([
-            ai.models.generateContent({ model: 'gemini-2.5-flash-image', contents: imagePrompt, config: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: "9:16" } } }),
-          ]);
-          const getPart = (r: PromiseSettledResult<any>) =>
-            r.status === 'fulfilled' ? r.value?.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData) : null;
-          const part16x9 = getPart(imgResult16x9);
-          const part1x1 = getPart(imgResult1x1);
-          const part9x16 = getPart(imgResult9x16);
+          const getPart = (r: any) => r.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
+          const part16x9 = getPart(imgResp16x9);
+          const part1x1 = getPart(imgResp1x1);
+          const part9x16 = getPart(imgResp9x16);
           if (part16x9?.inlineData) {
             imageBase64 = part16x9.inlineData.data;
             if (blogSettings.bannerText) {
@@ -2269,9 +2264,9 @@ ${rawText}`;
             image_url: (post.imageUrl && !post.imageUrl.startsWith('data:')) ? post.imageUrl : null,
             image_base64: (post.imageUrl && post.imageUrl.startsWith('data:')) ? post.imageUrl.split(',')[1] : null,
             image_url_1x1: (post.imageUrl1x1 && !post.imageUrl1x1.startsWith('data:')) ? post.imageUrl1x1 : null,
-            image_base64_1x1: (hasInstaDestination && post.imageUrl1x1?.startsWith('data:')) ? post.imageUrl1x1.split(',')[1] : null,
+            image_base64_1x1: (post.imageUrl1x1 && post.imageUrl1x1.startsWith('data:')) ? post.imageUrl1x1.split(',')[1] : null,
             image_url_9x16: (post.imageUrl9x16 && !post.imageUrl9x16.startsWith('data:')) ? post.imageUrl9x16 : null,
-            image_base64_9x16: (hasStoryDestination && post.imageUrl9x16?.startsWith('data:')) ? post.imageUrl9x16.split(',')[1] : null,
+            image_base64_9x16: (post.imageUrl9x16 && post.imageUrl9x16.startsWith('data:')) ? post.imageUrl9x16.split(',')[1] : null,
             keywords: post.keywords || [],
             insta_caption: instaCaption,
             insta_hashtags: typeof post.instaHashtags === 'string' ? post.instaHashtags : (post.instaHashtags as string[] | undefined)?.join(' ') || null,
@@ -2853,9 +2848,9 @@ ${rawText}`;
         image_url: (post.imageUrl && !post.imageUrl.startsWith('data:')) ? post.imageUrl : null,
         image_base64: (post.imageUrl && post.imageUrl.startsWith('data:')) ? post.imageUrl.split(',')[1] : null,
         image_url_1x1: (post.imageUrl1x1 && !post.imageUrl1x1.startsWith('data:')) ? post.imageUrl1x1 : null,
-        image_base64_1x1: (hasInsta && post.imageUrl1x1?.startsWith('data:')) ? post.imageUrl1x1.split(',')[1] : null,
+        image_base64_1x1: (post.imageUrl1x1 && post.imageUrl1x1.startsWith('data:')) ? post.imageUrl1x1.split(',')[1] : null,
         image_url_9x16: (post.imageUrl9x16 && !post.imageUrl9x16.startsWith('data:')) ? post.imageUrl9x16 : null,
-        image_base64_9x16: (hasStory && post.imageUrl9x16?.startsWith('data:')) ? post.imageUrl9x16.split(',')[1] : null,
+        image_base64_9x16: (post.imageUrl9x16 && post.imageUrl9x16.startsWith('data:')) ? post.imageUrl9x16.split(',')[1] : null,
         keywords: post.keywords || [],
         insta_caption: buildLoopInstaCaption(post.instaCaption || `${post.title}\n\n${post.metaDescription}`),
         insta_hashtags: typeof post.instaHashtags === 'string' ? post.instaHashtags : (post.instaHashtags as string[] | undefined)?.join(' ') || null,
@@ -4683,18 +4678,21 @@ ${rawText}`;
                                   </div>
                                 )}
                               </div>
-                              {/* サイズ選択（片方でもあれば表示） */}
-                              {(post.imageUrl1x1 || post.imageUrl9x16) && (
+                              {/* サイズ選択（両方ある場合のみ） */}
+                              {post.imageUrl1x1 && post.imageUrl9x16 && (
                                 <div className="space-y-1">
-                                  {post.imageUrl1x1 && (
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-[8px] text-black/40 w-16 shrink-0">フィード用</span>
+                                  {([
+                                    { label: 'フィード用', key: 'instaFeedRatio' as const, options: ['1:1', '9:16'] as const, def: '1:1' },
+                                    { label: 'ストーリー用', key: 'instaStoryRatio' as const, options: ['9:16', '1:1'] as const, def: '9:16' },
+                                  ]).map(({ label, key, options, def }) => (
+                                    <div key={key} className="flex items-center gap-2">
+                                      <span className="text-[8px] text-black/40 w-16 shrink-0">{label}</span>
                                       <div className="flex gap-1">
-                                        {(['1:1', ...(post.imageUrl9x16 ? ['9:16'] : [])] as ('1:1' | '9:16')[]).map(r => {
-                                          const isSelected = (post.instaFeedRatio || '1:1') === r;
+                                        {options.map(r => {
+                                          const isSelected = (post[key] || def) === r;
                                           return (
                                             <button key={r}
-                                              onClick={() => setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, instaFeedRatio: r } : p))}
+                                              onClick={() => setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, [key]: r } : p))}
                                               style={isSelected
                                                 ? { background: '#c5a059', color: '#fff', border: '2px solid #c5a059', fontWeight: 800 }
                                                 : { background: '#f0f0f0', color: '#aaa', border: '2px solid #e0e0e0' }}
@@ -4705,44 +4703,9 @@ ${rawText}`;
                                         })}
                                       </div>
                                     </div>
-                                  )}
-                                  {post.imageUrl9x16 && (
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-[8px] text-black/40 w-16 shrink-0">ストーリー用</span>
-                                      <div className="flex gap-1">
-                                        {(['9:16', ...(post.imageUrl1x1 ? ['1:1'] : [])] as ('9:16' | '1:1')[]).map(r => {
-                                          const isSelected = (post.instaStoryRatio || '9:16') === r;
-                                          return (
-                                            <button key={r}
-                                              onClick={() => setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, instaStoryRatio: r } : p))}
-                                              style={isSelected
-                                                ? { background: '#c5a059', color: '#fff', border: '2px solid #c5a059', fontWeight: 800 }
-                                                : { background: '#f0f0f0', color: '#aaa', border: '2px solid #e0e0e0' }}
-                                              className="text-[9px] px-2.5 py-0.5 rounded-lg transition-all">
-                                              {r}
-                                            </button>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-                                  )}
+                                  ))}
                                 </div>
                               )}
-                              {/* 投稿先バッジ */}
-                              <div className="flex flex-wrap gap-1 mt-1">
-                                {(blogSettings.destinations.includes('blog') || blogSettings.destinations.includes('news')) && (
-                                  <span className="text-[7px] bg-black/10 text-black/50 px-1.5 py-0.5 rounded font-bold">WP</span>
-                                )}
-                                {blogSettings.destinations.includes('instagram') && (
-                                  <span className="text-[7px] bg-pink-100 text-pink-500 px-1.5 py-0.5 rounded font-bold">Instaフィード</span>
-                                )}
-                                {blogSettings.destinations.includes('instagram_story') && (
-                                  <span className="text-[7px] bg-orange-100 text-orange-500 px-1.5 py-0.5 rounded font-bold">ストーリー</span>
-                                )}
-                                {blogSettings.destinations.includes('threads') && (
-                                  <span className="text-[7px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-bold">スレッズ</span>
-                                )}
-                              </div>
                             </div>
 
                             {/* 右列: タイトル + プレビュー */}
@@ -5008,9 +4971,8 @@ ${rawText}`;
                                 </span>
                               )}
                               {sp.post_to_wp && <span className="text-[10px] text-black/30">WP</span>}
-                              {sp.post_to_instagram && <span className="text-[10px] text-pink-400">Instaフィード</span>}
-                              {sp.post_to_instagram_story && <span className="text-[10px] text-orange-400">ストーリー</span>}
-                              {sp.post_to_threads && <span className="text-[10px] text-black/30">スレッズ</span>}
+                              {sp.post_to_instagram && <span className="text-[10px] text-black/30">Insta</span>}
+                              {sp.post_to_threads && <span className="text-[10px] text-black/30">Threads</span>}
                             </div>
                             {sp.error_message && (
                               <p className="text-[10px] text-red-400 mt-0.5 truncate">{sp.error_message}</p>
@@ -5108,28 +5070,6 @@ ${rawText}`;
                     {m === 'scheduled' ? '予約投稿' : 'ループ予約'}
                   </button>
                 ))}
-              </div>
-
-              {/* 投稿先確認 */}
-              <div className="bg-black/3 rounded-xl px-3 py-2">
-                <p className="text-[9px] text-black/40 font-bold mb-1.5">投稿先</p>
-                <div className="flex flex-wrap gap-1">
-                  {(blogSettings.destinations.includes('blog') || blogSettings.destinations.includes('news')) && (
-                    <span className="text-[8px] bg-black/10 text-black/50 px-2 py-0.5 rounded-full font-bold">WP</span>
-                  )}
-                  {blogSettings.destinations.includes('instagram') && (
-                    <span className="text-[8px] bg-pink-100 text-pink-500 px-2 py-0.5 rounded-full font-bold">Instaフィード</span>
-                  )}
-                  {blogSettings.destinations.includes('instagram_story') && (
-                    <span className="text-[8px] bg-orange-100 text-orange-500 px-2 py-0.5 rounded-full font-bold">Instaストーリー</span>
-                  )}
-                  {blogSettings.destinations.includes('threads') && (
-                    <span className="text-[8px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-bold">スレッズ</span>
-                  )}
-                  {blogSettings.destinations.length === 0 && (
-                    <span className="text-[8px] text-red-400 font-bold">投稿先が設定されていません</span>
-                  )}
-                </div>
               </div>
 
               {/* ループ設定（ループモード時のみ） */}
