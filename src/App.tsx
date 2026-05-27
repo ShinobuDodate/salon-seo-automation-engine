@@ -4700,6 +4700,21 @@ ${rawText}`;
                                   ))}
                                 </div>
                               )}
+                              {/* 投稿先バッジ */}
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {(blogSettings.destinations.includes('blog') || blogSettings.destinations.includes('news')) && (
+                                  <span className="text-[8px] px-1.5 py-0.5 rounded-md bg-black/10 text-black/50 font-bold">WP</span>
+                                )}
+                                {blogSettings.destinations.includes('instagram') && (
+                                  <span className="text-[8px] px-1.5 py-0.5 rounded-md bg-pink-100 text-pink-500 font-bold">Instaフィード</span>
+                                )}
+                                {blogSettings.destinations.includes('instagram_story') && (
+                                  <span className="text-[8px] px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-500 font-bold">Instaストーリー</span>
+                                )}
+                                {blogSettings.destinations.includes('threads') && (
+                                  <span className="text-[8px] px-1.5 py-0.5 rounded-md bg-black/10 text-black/50 font-bold">スレッズ</span>
+                                )}
+                              </div>
                             </div>
 
                             {/* 右列: タイトル + プレビュー */}
@@ -4964,9 +4979,10 @@ ${rawText}`;
                                   <span>{formatLoopInterval(sp.loop_interval_days)}ループ{sp.loop_count > 0 ? `（${sp.loop_count}回目）` : ''}</span>
                                 </span>
                               )}
-                              {sp.post_to_wp && <span className="text-[10px] text-black/30">WP</span>}
-                              {sp.post_to_instagram && <span className="text-[10px] text-black/30">Insta</span>}
-                              {sp.post_to_threads && <span className="text-[10px] text-black/30">Threads</span>}
+                              {sp.post_to_wp && <span className="text-[8px] px-1.5 py-0.5 rounded-md bg-black/10 text-black/50 font-bold">WP</span>}
+                              {sp.post_to_instagram && <span className="text-[8px] px-1.5 py-0.5 rounded-md bg-pink-100 text-pink-500 font-bold">Instaフィード</span>}
+                              {sp.post_to_instagram_story && <span className="text-[8px] px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-500 font-bold">Instaストーリー</span>}
+                              {sp.post_to_threads && <span className="text-[8px] px-1.5 py-0.5 rounded-md bg-black/10 text-black/50 font-bold">スレッズ</span>}
                             </div>
                             {sp.error_message && (
                               <p className="text-[10px] text-red-400 mt-0.5 truncate">{sp.error_message}</p>
@@ -5208,6 +5224,58 @@ ${rawText}`;
                         </div>
                       </div>
                     </div>
+
+                    {/* 1:1 / 9:16 画像差し替え */}
+                    {(editingPost.imageUrl1x1 || editingPost.imageUrl9x16) && (
+                      <div className="flex gap-4">
+                        {editingPost.imageUrl1x1 && (
+                          <div className="space-y-1">
+                            <label className="text-[10px] uppercase tracking-widest font-bold text-black/40">フィード（1:1）</label>
+                            <div className="w-24 h-24 rounded-xl overflow-hidden border border-black/10 relative group">
+                              <img src={editingPost.imageUrl1x1} className="w-full h-full object-cover" alt="" />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <label className="cursor-pointer bg-white/20 backdrop-blur-md text-white text-[8px] font-bold px-2 py-1 rounded-full hover:bg-white/30 transition-all">
+                                  差し替える
+                                  <input type="file" accept="image/*" className="hidden"
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (!file) return;
+                                      e.target.value = '';
+                                      const reader = new FileReader();
+                                      reader.onload = (ev) => { if (ev.target?.result) setEditingPost({ ...editingPost, imageUrl1x1: ev.target.result as string }); };
+                                      reader.readAsDataURL(file);
+                                    }}
+                                  />
+                                </label>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        {editingPost.imageUrl9x16 && (
+                          <div className="space-y-1">
+                            <label className="text-[10px] uppercase tracking-widest font-bold text-black/40">ストーリー（9:16）</label>
+                            <div className="rounded-xl overflow-hidden border border-black/10 relative group" style={{ width: '54px', height: '96px' }}>
+                              <img src={editingPost.imageUrl9x16} className="w-full h-full object-cover" alt="" />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <label className="cursor-pointer bg-white/20 backdrop-blur-md text-white text-[8px] font-bold px-2 py-1 rounded-full hover:bg-white/30 transition-all">
+                                  差し替える
+                                  <input type="file" accept="image/*" className="hidden"
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (!file) return;
+                                      e.target.value = '';
+                                      const reader = new FileReader();
+                                      reader.onload = (ev) => { if (ev.target?.result) setEditingPost({ ...editingPost, imageUrl9x16: ev.target.result as string }); };
+                                      reader.readAsDataURL(file);
+                                    }}
+                                  />
+                                </label>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     <div className="space-y-4">
                       <div className="space-y-2">
