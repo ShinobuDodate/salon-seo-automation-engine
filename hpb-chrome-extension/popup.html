@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HPBブログ自動投稿</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 320px;
+      font-family: -apple-system, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', Meiryo, sans-serif;
+      background: #fafafa;
+      color: #333;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #e30000, #c00);
+      color: white;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .header h1 {
+      font-size: 13px;
+      font-weight: bold;
+      letter-spacing: 0.02em;
+    }
+    .header p {
+      font-size: 9px;
+      opacity: 0.8;
+      margin-top: 2px;
+    }
+
+    .section {
+      padding: 12px 16px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .label {
+      font-size: 9px;
+      font-weight: bold;
+      color: #999;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+    }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+
+    .status-badge {
+      font-size: 10px;
+      font-weight: bold;
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+    .status-idle { background: #f0f0f0; color: #999; }
+    .status-active { background: #fef3c7; color: #d97706; animation: pulse 1.5s infinite; }
+    .status-done { background: #d1fae5; color: #065f46; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
+    .queue-info {
+      font-size: 10px;
+      color: #666;
+    }
+    .queue-count {
+      font-size: 20px;
+      font-weight: bold;
+      color: #e30000;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background: #e30000;
+      color: white;
+    }
+    .btn-primary:hover { background: #c00; }
+    .btn-primary:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    .input-row {
+      margin-bottom: 8px;
+    }
+    .input-row label {
+      display: block;
+      font-size: 9px;
+      color: #999;
+      font-weight: bold;
+      margin-bottom: 3px;
+      text-transform: uppercase;
+    }
+    .input-row input {
+      width: 100%;
+      padding: 6px 8px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 11px;
+      background: white;
+      outline: none;
+    }
+    .input-row input:focus { border-color: #e30000; }
+
+    .save-btn {
+      background: none;
+      border: 1px solid #e30000;
+      color: #e30000;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .save-btn:hover { background: #fef2f2; }
+
+    .last-check {
+      font-size: 9px;
+      color: #aaa;
+      margin-top: 4px;
+    }
+
+    .note {
+      font-size: 9px;
+      color: #aaa;
+      line-height: 1.5;
+      padding: 8px 16px 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>HPBブログ自動投稿</h1>
+      <p>ホットペッパービューティー × salon-seo-engine</p>
+    </div>
+  </div>
+
+  <!-- 現在の状態 -->
+  <div class="section">
+    <div class="label">現在の状態</div>
+    <div class="status-row">
+      <span id="statusBadge" class="status-badge status-idle">待機中</span>
+      <span id="queueInfo" class="queue-info"></span>
+    </div>
+    <div id="lastCheck" class="last-check">—</div>
+  </div>
+
+  <!-- 投稿件数 -->
+  <div class="section">
+    <div class="label">今日の対象記事</div>
+    <div class="status-row">
+      <span><span id="queueCount" class="queue-count">—</span> <span style="font-size:10px;color:#999">件</span></span>
+    </div>
+  </div>
+
+  <!-- 手動実行 -->
+  <div class="section">
+    <button id="startBtn" class="btn btn-primary">今すぐ投稿を実行</button>
+  </div>
+
+  <!-- Supabase設定 -->
+  <div class="section">
+    <div class="label">Supabase設定</div>
+    <div class="input-row">
+      <label>Supabase URL</label>
+      <input type="text" id="supabaseUrl" placeholder="https://xxxx.supabase.co" />
+    </div>
+    <div class="input-row">
+      <label>Anon Key</label>
+      <input type="password" id="supabaseKey" placeholder="eyJhbGci..." />
+    </div>
+    <button id="saveConfigBtn" class="save-btn">設定を保存</button>
+  </div>
+
+  <p class="note">
+    ※ ChromeとこのページをPC上で開いている間、5分ごとに自動でHPBへの投稿チェックを行います。<br>
+    ※ Phase 2（HPBセレクタ実装）完了後に実際の投稿が開始されます。
+  </p>
+
+  <script src="popup.js"></script>
+</body>
+</html>

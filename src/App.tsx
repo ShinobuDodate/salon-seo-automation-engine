@@ -108,6 +108,8 @@ interface SalonProfile {
   instagramUrl: string;
   otherUrls: string[];
   notes: string;
+  hpbLoginId?: string;
+  hpbLoginPassword?: string;
   commonContents?: CommonContent[];
   selectedTopContentId?: string;
   selectedAboveImageContentId?: string;
@@ -2204,6 +2206,7 @@ ${rawText}`;
     const hasInstaDestination = dests.includes('instagram');
     const hasStoryDestination = dests.includes('instagram_story');
     const hasThreadsDestination = dests.includes('threads');
+    const hasHpbDestination = dests.includes('hpb');
 
     if (hasWpDestination && (!blogSettings.username || !blogSettings.appPassword)) {
       if (!isBulk) setNotification({ message: "WordPressのユーザー名とアプリケーションパスワードを設定してください。", type: 'error' });
@@ -2277,6 +2280,7 @@ ${rawText}`;
             post_to_instagram: hasInstaDestination,
             post_to_instagram_story: hasStoryDestination,
             post_to_threads: hasThreadsDestination,
+            post_to_hpb: hasHpbDestination,
             wp_url: wpSite?.url || blogSettings.targetUrl || null,
             wp_username: wpSite?.username || blogSettings.username || null,
             wp_app_password: wpSite?.appPassword || blogSettings.appPassword || null,
@@ -2794,6 +2798,7 @@ ${rawText}`;
       const hasInsta = dests.includes('instagram') && !!(instaAccount || (blogSettings.instagramBusinessId && blogSettings.instagramAccessToken));
       const hasStory = dests.includes('instagram_story');
       const hasThreads = !!(threadsAccount || (dests.includes('threads') && blogSettings.socialAccounts.find((a: SocialAccount) => a.platform === 'threads')));
+      const hasHpb = dests.includes('hpb');
 
       const _loopActiveSalon = blogSettings.salonProfiles.find(s => s.id === blogSettings.selectedSalonId);
       const _loopActiveContents = (_loopActiveSalon?.commonContents && _loopActiveSalon.commonContents.length > 0) ? _loopActiveSalon.commonContents : blogSettings.commonContents;
@@ -2855,6 +2860,7 @@ ${rawText}`;
         post_to_instagram: hasInsta,
         post_to_instagram_story: hasStory,
         post_to_threads: hasThreads,
+        post_to_hpb: hasHpb,
         wp_url: wpSite?.url || blogSettings.targetUrl || null,
         wp_username: wpSite?.username || blogSettings.username || null,
         wp_app_password: wpSite?.appPassword || blogSettings.appPassword || null,
@@ -4238,12 +4244,13 @@ ${rawText}`;
                             </button>
                           </div>
 
-                          {/* SNS行（3等分） */}
-                          <div className="grid grid-cols-3 gap-2">
+                          {/* SNS行（2x2） */}
+                          <div className="grid grid-cols-2 gap-2">
                             {[
                               { id: 'instagram', icon: <Instagram size={20} />, label: 'Instagram', sub: 'フィード' },
                               { id: 'instagram_story', icon: <Instagram size={20} />, label: 'ストーリー', sub: 'Story' },
                               { id: 'threads', icon: <Share2 size={20} />, label: 'Threads', sub: 'スレッズ' },
+                              { id: 'hpb', icon: <Globe size={20} />, label: 'HPB', sub: 'ホットペッパー' },
                             ].map(({ id, icon, label, sub }) => {
                               const isSelected = blogSettings.destinations.includes(id);
                               return (
@@ -4714,6 +4721,9 @@ ${rawText}`;
                                 {blogSettings.destinations.includes('threads') && (
                                   <span className="text-[8px] px-1.5 py-0.5 rounded-md bg-black/10 text-black/50 font-bold">スレッズ</span>
                                 )}
+                                {blogSettings.destinations.includes('hpb') && (
+                                  <span className="text-[8px] px-1.5 py-0.5 rounded-md bg-red-100 text-red-500 font-bold">HPBブログ</span>
+                                )}
                               </div>
                             </div>
 
@@ -4983,6 +4993,7 @@ ${rawText}`;
                               {sp.post_to_instagram && <span className="text-[8px] px-1.5 py-0.5 rounded-md bg-pink-100 text-pink-500 font-bold">Instaフィード</span>}
                               {sp.post_to_instagram_story && <span className="text-[8px] px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-500 font-bold">Instaストーリー</span>}
                               {sp.post_to_threads && <span className="text-[8px] px-1.5 py-0.5 rounded-md bg-black/10 text-black/50 font-bold">スレッズ</span>}
+                              {sp.post_to_hpb && <span className="text-[8px] px-1.5 py-0.5 rounded-md bg-red-100 text-red-500 font-bold">HPBブログ</span>}
                             </div>
                             {sp.error_message && (
                               <p className="text-[10px] text-red-400 mt-0.5 truncate">{sp.error_message}</p>
@@ -5604,6 +5615,21 @@ ${rawText}`;
                               className="w-full bg-black/5 border border-black/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-gold/50" />
                           </div>
                         ))}
+
+                        {/* HPBログイン情報 */}
+                        <div className="space-y-2 border-t border-black/5 pt-3">
+                          <label className="text-[10px] text-black/40 font-bold uppercase">HPB（ホットペッパービューティー）ログイン</label>
+                          <div className="space-y-1">
+                            <input type="text" placeholder="ログインID（メールアドレスなど）" value={(form as any).hpbLoginId || ''}
+                              onChange={(e) => setForm({ ...form, hpbLoginId: e.target.value })}
+                              className="w-full bg-black/5 border border-black/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-gold/50" />
+                          </div>
+                          <div className="space-y-1">
+                            <input type="password" placeholder="パスワード" value={(form as any).hpbLoginPassword || ''}
+                              onChange={(e) => setForm({ ...form, hpbLoginPassword: e.target.value })}
+                              className="w-full bg-black/5 border border-black/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-gold/50" />
+                          </div>
+                        </div>
 
                         {/* その他のURL（動的追加） */}
                         <div className="space-y-2">
