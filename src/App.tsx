@@ -5225,57 +5225,55 @@ ${rawText}`;
                       </div>
                     </div>
 
-                    {/* 1:1 / 9:16 画像差し替え */}
-                    {(editingPost.imageUrl1x1 || editingPost.imageUrl9x16) && (
-                      <div className="flex gap-4">
-                        {editingPost.imageUrl1x1 && (
-                          <div className="space-y-1">
-                            <label className="text-[10px] uppercase tracking-widest font-bold text-black/40">フィード（1:1）</label>
-                            <div className="w-24 h-24 rounded-xl overflow-hidden border border-black/10 relative group">
-                              <img src={editingPost.imageUrl1x1} className="w-full h-full object-cover" alt="" />
-                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                <label className="cursor-pointer bg-white/20 backdrop-blur-md text-white text-[8px] font-bold px-2 py-1 rounded-full hover:bg-white/30 transition-all">
-                                  差し替える
-                                  <input type="file" accept="image/*" className="hidden"
-                                    onChange={(e) => {
-                                      const file = e.target.files?.[0];
-                                      if (!file) return;
-                                      e.target.value = '';
-                                      const reader = new FileReader();
-                                      reader.onload = (ev) => { if (ev.target?.result) setEditingPost({ ...editingPost, imageUrl1x1: ev.target.result as string }); };
-                                      reader.readAsDataURL(file);
-                                    }}
-                                  />
-                                </label>
-                              </div>
-                            </div>
+                    {/* 1:1 / 9:16 画像（常に表示・画像なしでも追加可） */}
+                    <div className="flex gap-4">
+                      <div className="space-y-1">
+                        <label className="text-[10px] uppercase tracking-widest font-bold text-black/40">フィード（1:1）</label>
+                        <div className="w-24 h-24 rounded-xl overflow-hidden border border-black/10 relative group bg-black/5">
+                          {editingPost.imageUrl1x1 && (
+                            <img src={editingPost.imageUrl1x1} className="w-full h-full object-cover" alt="" />
+                          )}
+                          <div className={`absolute inset-0 flex items-center justify-center transition-opacity ${editingPost.imageUrl1x1 ? 'bg-black/40 opacity-0 group-hover:opacity-100' : ''}`}>
+                            <label className={`cursor-pointer text-[8px] font-bold px-2 py-1 rounded-full transition-all ${editingPost.imageUrl1x1 ? 'bg-white/20 backdrop-blur-md text-white hover:bg-white/30' : 'bg-black/10 text-black/50 hover:bg-black/20'}`}>
+                              {editingPost.imageUrl1x1 ? '差し替える' : '+ 追加'}
+                              <input type="file" accept="image/*" className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  e.target.value = '';
+                                  const reader = new FileReader();
+                                  reader.onload = (ev) => { if (ev.target?.result) setEditingPost({ ...editingPost, imageUrl1x1: ev.target.result as string }); };
+                                  reader.readAsDataURL(file);
+                                }}
+                              />
+                            </label>
                           </div>
-                        )}
-                        {editingPost.imageUrl9x16 && (
-                          <div className="space-y-1">
-                            <label className="text-[10px] uppercase tracking-widest font-bold text-black/40">ストーリー（9:16）</label>
-                            <div className="rounded-xl overflow-hidden border border-black/10 relative group" style={{ width: '54px', height: '96px' }}>
-                              <img src={editingPost.imageUrl9x16} className="w-full h-full object-cover" alt="" />
-                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                <label className="cursor-pointer bg-white/20 backdrop-blur-md text-white text-[8px] font-bold px-2 py-1 rounded-full hover:bg-white/30 transition-all">
-                                  差し替える
-                                  <input type="file" accept="image/*" className="hidden"
-                                    onChange={(e) => {
-                                      const file = e.target.files?.[0];
-                                      if (!file) return;
-                                      e.target.value = '';
-                                      const reader = new FileReader();
-                                      reader.onload = (ev) => { if (ev.target?.result) setEditingPost({ ...editingPost, imageUrl9x16: ev.target.result as string }); };
-                                      reader.readAsDataURL(file);
-                                    }}
-                                  />
-                                </label>
-                              </div>
-                            </div>
-                          </div>
-                        )}
+                        </div>
                       </div>
-                    )}
+                      <div className="space-y-1">
+                        <label className="text-[10px] uppercase tracking-widest font-bold text-black/40">ストーリー（9:16）</label>
+                        <div className="rounded-xl overflow-hidden border border-black/10 relative group bg-black/5" style={{ width: '54px', height: '96px' }}>
+                          {editingPost.imageUrl9x16 && (
+                            <img src={editingPost.imageUrl9x16} className="w-full h-full object-cover" alt="" />
+                          )}
+                          <div className={`absolute inset-0 flex items-center justify-center transition-opacity ${editingPost.imageUrl9x16 ? 'bg-black/40 opacity-0 group-hover:opacity-100' : ''}`}>
+                            <label className={`cursor-pointer text-[8px] font-bold px-2 py-1 rounded-full transition-all ${editingPost.imageUrl9x16 ? 'bg-white/20 backdrop-blur-md text-white hover:bg-white/30' : 'bg-black/10 text-black/50 hover:bg-black/20'}`}>
+                              {editingPost.imageUrl9x16 ? '差し替える' : '+ 追加'}
+                              <input type="file" accept="image/*" className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  e.target.value = '';
+                                  const reader = new FileReader();
+                                  reader.onload = (ev) => { if (ev.target?.result) setEditingPost({ ...editingPost, imageUrl9x16: ev.target.result as string }); };
+                                  reader.readAsDataURL(file);
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
 
                     <div className="space-y-4">
                       <div className="space-y-2">
