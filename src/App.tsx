@@ -1220,8 +1220,8 @@ ${rawText}`;
         // Image-to-Image - generate 16:9, 1:1, 9:16 in parallel
         try {
           const imagePrompt = blogSettings.customImagePrompt
-            ? `${blogSettings.customImagePrompt}. Keywords: ${keywordsString}. STRICT RULE: DO NOT include any text, letters, or characters in the image.`
-            : `${selectedImageStyle} Professional photography, 4k. STRICT RULE: DO NOT include any text, letters, or characters in the image. Keywords: ${keywordsString}`;
+            ? `${blogSettings.customImagePrompt}. Keywords: ${keywordsString}. STRICT RULES: Single image only. Do not create a collage, grid, or split-panel layout. DO NOT include any text, letters, or characters in the image.`
+            : `${selectedImageStyle} Professional photography, 4k. Keywords: ${keywordsString}. STRICT RULES: Single image only. Do not create a collage, grid, or split-panel layout. DO NOT include any text, letters, or characters in the image.`;
 
           const editMimeType = selectedImage.startsWith('data:') ? selectedImage.split(';')[0].split(':')[1] : 'image/png';
           const editData = selectedImage.split(',')[1] || selectedImage;
