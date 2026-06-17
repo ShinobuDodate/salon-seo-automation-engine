@@ -3058,7 +3058,7 @@ ${currentContent}
         const { response: updateRes } = await wpFetchAuto(
           `${foundEp}/${post.id}`,
           {
-            method: 'PUT',
+            method: 'POST',
             headers: authHeaders,
             body: { content: improved.content, excerpt: improved.metaDescription }
           }
