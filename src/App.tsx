@@ -3163,6 +3163,17 @@ ${currentContent}
           results: prev.results.map((r, idx) => idx === i ? { ...r, title: currentTitle } : r)
         }));
 
+        // 48時間以内に変更された記事のみ復元（それ以外はスキップ）
+        const modifiedDate = new Date(post.modified || post.date);
+        const hoursSinceModified = (Date.now() - modifiedDate.getTime()) / (1000 * 60 * 60);
+        if (hoursSinceModified > 48) {
+          setRestoreStatus(prev => ({
+            ...prev,
+            results: prev.results.map((r, idx) => idx === i ? { ...r, status: 'done' as const, message: 'スキップ（変更なし）' } : r)
+          }));
+          continue;
+        }
+
         const { response: revRes } = await wpFetchAuto(
           `${foundEp}/${post.id}/revisions?per_page=5`,
           { method: 'GET', headers: authHeaders }
