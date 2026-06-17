@@ -1636,6 +1636,12 @@ ${rawText}`;
     results: { url: string; title: string; status: 'pending' | 'processing' | 'done' | 'error'; message?: string }[];
   }>({ isRunning: false, current: 0, total: 0, results: [] });
   const [improveUrls, setImproveUrls] = useState<string[]>([]);
+  const [restoreStatus, setRestoreStatus] = useState<{
+    isRunning: boolean;
+    current: number;
+    total: number;
+    results: { url: string; title: string; status: 'pending' | 'processing' | 'done' | 'error'; message?: string }[];
+  }>({ isRunning: false, current: 0, total: 0, results: [] });
 
   const getWpApiUrl = (baseUrl: string, endpoint: string = '') => {
     let base = baseUrl.trim();
@@ -3086,6 +3092,118 @@ ${currentContent}
 
     setImproveStatus(prev => ({ ...prev, isRunning: false }));
     setNotification({ message: '記事改善バッチ処理が完了しました！', type: 'success' });
+  };
+
+  const runArticleRestore = async () => {
+    if (improveUrls.length === 0) {
+      setNotification({ message: 'CSVをアップロードしてください。', type: 'error' });
+      return;
+    }
+    if (!blogSettings.targetUrl || !blogSettings.username || !blogSettings.appPassword) {
+      setNotification({ message: 'WordPress接続情報が設定されていません。', type: 'error' });
+      return;
+    }
+    const credentials = btoa(`${blogSettings.username.trim()}:${blogSettings.appPassword.replace(/\s+/g, '')}`);
+    const authHeaders = { 'Authorization': `Basic ${credentials}`, 'Content-Type': 'application/json' };
+    const newsSlug = blogSettings.newsSlug || 'news';
+
+    setRestoreStatus({
+      isRunning: true,
+      current: 0,
+      total: improveUrls.length,
+      results: improveUrls.map(url => ({
+        url,
+        title: decodeURIComponent(url.replace('https://do-date.com/', '').replace(/\/$/, '')),
+        status: 'pending' as const
+      }))
+    });
+
+    for (let i = 0; i < improveUrls.length; i++) {
+      const targetUrl = improveUrls[i];
+      setRestoreStatus(prev => ({
+        ...prev,
+        current: i + 1,
+        results: prev.results.map((r, idx) => idx === i ? { ...r, status: 'processing' as const } : r)
+      }));
+
+      try {
+        const path = targetUrl.replace('https://do-date.com/', '').replace(/\/$/, '');
+        const slug = decodeURIComponent(path.split('/').pop() || path);
+        const searchKeyword = slug.replace(/[【】「」！？。、・\-（）]/g, ' ').trim().substring(0, 20);
+
+        let epCandidates = ['/posts', '/pages'];
+        if (path.startsWith('news/')) epCandidates = [`/${newsSlug}`, '/posts'];
+        else if (path.startsWith('products/')) epCandidates = ['/pages', '/posts'];
+
+        let post: any = null;
+        let foundEp = '/posts';
+
+        for (const ep of epCandidates) {
+          const { response: sr } = await wpFetchAuto(
+            `${ep}?search=${encodeURIComponent(searchKeyword)}&per_page=10`,
+            { method: 'GET', headers: authHeaders }
+          );
+          const items = await sr.json();
+          if (!Array.isArray(items) || items.length === 0) continue;
+          const match = items.find((p: any) => {
+            const pLink = (p.link || '').replace(/\/$/, '').toLowerCase();
+            const tLink = targetUrl.replace(/\/$/, '').toLowerCase();
+            return pLink === tLink || pLink.includes(slug.substring(0, 12).toLowerCase());
+          }) || items[0];
+          post = match;
+          foundEp = ep;
+          break;
+        }
+
+        if (!post) throw new Error('記事が見つかりませんでした');
+
+        const currentTitle = (post.title?.rendered || slug).replace(/<[^>]+>/g, '');
+        setRestoreStatus(prev => ({
+          ...prev,
+          results: prev.results.map((r, idx) => idx === i ? { ...r, title: currentTitle } : r)
+        }));
+
+        const { response: revRes } = await wpFetchAuto(
+          `${foundEp}/${post.id}/revisions?per_page=5`,
+          { method: 'GET', headers: authHeaders }
+        );
+        const revisions = await revRes.json();
+        if (!Array.isArray(revisions) || revisions.length === 0) throw new Error('リビジョンがありません（変更前の版が見つかりません）');
+
+        const original = revisions[0];
+        if (!original?.content?.raw) throw new Error('リビジョンの内容を取得できませんでした');
+
+        const { response: updateRes } = await wpFetchAuto(
+          `${foundEp}/${post.id}`,
+          {
+            method: 'POST',
+            headers: authHeaders,
+            body: { content: original.content.raw, excerpt: original.excerpt?.raw || '' }
+          }
+        );
+        if (!updateRes.ok) {
+          const errData = await updateRes.json().catch(() => ({}));
+          throw new Error((errData as any)?.message || `更新エラー(${updateRes.status})`);
+        }
+
+        setRestoreStatus(prev => ({
+          ...prev,
+          results: prev.results.map((r, idx) => idx === i ? { ...r, status: 'done' as const, message: '復元完了' } : r)
+        }));
+      } catch (err: any) {
+        setRestoreStatus(prev => ({
+          ...prev,
+          results: prev.results.map((r, idx) => idx === i ? { ...r, status: 'error' as const, message: err.message } : r)
+        }));
+      }
+
+      if (i < improveUrls.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
+    }
+
+    setRestoreStatus(prev => ({ ...prev, isRunning: false }));
+    setNotification({ message: '一括復元が完了しました！', type: 'success' });
   };
 
   return (
@@ -5293,12 +5411,63 @@ ${currentContent}
                   </div>
                   <button
                     onClick={runArticleImprovement}
-                    className="w-full py-3 bg-gold text-white text-[11px] font-bold uppercase tracking-widest rounded-xl shadow-lg shadow-gold/20 hover:bg-gold/90 transition-all flex items-center justify-center space-x-2"
+                    disabled={improveStatus.isRunning || restoreStatus.isRunning}
+                    className="w-full py-3 bg-gold text-white text-[11px] font-bold uppercase tracking-widest rounded-xl shadow-lg shadow-gold/20 hover:bg-gold/90 transition-all flex items-center justify-center space-x-2 disabled:opacity-40"
                   >
                     <Sparkles size={13} />
                     <span>{improveUrls.length}件の改善を開始する</span>
                   </button>
+                  <button
+                    onClick={runArticleRestore}
+                    disabled={improveStatus.isRunning || restoreStatus.isRunning}
+                    className="w-full py-3 bg-red-500 text-white text-[11px] font-bold uppercase tracking-widest rounded-xl hover:bg-red-600 transition-all flex items-center justify-center space-x-2 disabled:opacity-40"
+                  >
+                    <RefreshCw size={13} />
+                    <span>一括復元（AI変更を元に戻す）</span>
+                  </button>
                 </>
+              )}
+              {restoreStatus.results.length > 0 && (
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-[9px] text-black/40 font-bold uppercase tracking-widest">
+                      <span>復元進捗</span>
+                      <span>{restoreStatus.current} / {restoreStatus.total}</span>
+                    </div>
+                    <div className="h-1 bg-black/5 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-red-400 rounded-full transition-all duration-700"
+                        style={{ width: `${restoreStatus.total > 0 ? (restoreStatus.current / restoreStatus.total) * 100 : 0}%` }}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5 max-h-80 overflow-y-auto">
+                    {restoreStatus.results.map((r, idx) => (
+                      <div key={idx} className="flex items-start justify-between bg-black/3 rounded-xl px-3 py-2 gap-2">
+                        <p className="text-[10px] text-black/60 flex-1 min-w-0 font-medium leading-relaxed">{r.title}</p>
+                        <div className="shrink-0 text-right">
+                          {r.status === 'pending' && <span className="text-[9px] text-black/25 font-bold">待機中</span>}
+                          {r.status === 'processing' && <span className="text-[9px] text-gold animate-pulse font-bold flex items-center space-x-1"><Loader2 size={9} className="animate-spin" /><span>復元中</span></span>}
+                          {r.status === 'done' && <span className="text-[9px] text-emerald-500 font-bold flex items-center space-x-1"><CheckCircle size={9} /><span>復元完了</span></span>}
+                          {r.status === 'error' && (
+                            <div className="space-y-0.5">
+                              <span className="text-[9px] text-red-400 font-bold flex items-center space-x-1"><AlertCircle size={9} /><span>エラー</span></span>
+                              {r.message && <p className="text-[8px] text-red-300 max-w-[120px] break-words">{r.message.substring(0, 40)}</p>}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {!restoreStatus.isRunning && (
+                    <button
+                      onClick={() => setRestoreStatus({ isRunning: false, current: 0, total: 0, results: [] })}
+                      className="text-[10px] text-black/30 hover:text-black/50 underline transition-colors"
+                    >
+                      復元結果をクリア
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           ) : (
