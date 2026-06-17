@@ -350,6 +350,32 @@ export default function App() {
   );
 }
 
+// 未インデックス記事URL一覧（Search Console「クロール済み・インデックス未登録」2026年5月分）
+const UNINDEXED_ARTICLE_URLS = [
+  'https://do-date.com/スレンジュールでglp-1を味方に！飲むマンジャロ級/',
+  'https://do-date.com/スレンジュールの実力とは？飲むマンジャロと比/',
+  'https://do-date.com/【2026-4-16発売】v3-vspic-c-glow-mistの衝撃と予約特典/',
+  'https://do-date.com/トリプルエクソソームx浸透型ミネラルの衝撃。/',
+  'https://do-date.com/リピート率がグンと上がる！スレンジュールでエ/',
+  'https://do-date.com/未回収リスクをゼロに。オンラインスクール運営/',
+  'https://do-date.com/スレンジュールgjp-1で新規顧客獲得！月商50万円upを叶/',
+  'https://do-date.com/オンラインスクールの成約率を劇的に変える！受/',
+  'https://do-date.com/スレンジュールとglp1医療薬を比較！エステでの仕/',
+  'https://do-date.com/スレンジュールの効果を徹底解説！お客様が感動/',
+  'https://do-date.com/exolean（エクソリーン）で痩身革命！お客様を驚かせ-4/',
+  'https://do-date.com/スレンジュール導入でエステ経営が変わる！接客/',
+  'https://do-date.com/他店と差がつく！話題の「スレンジュール」でサ/',
+  'https://do-date.com/スレンジュールでglp1を活性化！エステの仕入れ新/',
+  'https://do-date.com/「もう手放せない！」お客様が虜になるスレンジ/',
+  'https://do-date.com/話題のreviスレンジュールとは？飲むマンジャロと/',
+  'https://do-date.com/exsoleanで差別化！エクソリーンが叶える予約の取れな/',
+  'https://do-date.com/「まだ導入してないんですか？」と聞かれちゃう/',
+  'https://do-date.com/denbaでサロンが変わる！最新トレンドの空間美容を/',
+  'https://do-date.com/エステサロンの未来を拓く！「スレンジュール-glp-1/',
+  'https://do-date.com/投資回収最速！「スレンジュール」導入サロンが/',
+  'https://do-date.com/スレンジュールで叶える次世代ダイエット！glp-1を/',
+];
+
 function AppContent() {
   const [state, setState] = useState<GenerationState>({ status: 'idle' });
   const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' | 'info' } | null>(null);
@@ -1629,6 +1655,12 @@ ${rawText}`;
   const [isFetchingCategories, setIsFetchingCategories] = useState(false);
   const [isCheckingIg, setIsCheckingIg] = useState(false);
   const [isExtendingToken, setIsExtendingToken] = useState(false);
+  const [improveStatus, setImproveStatus] = useState<{
+    isRunning: boolean;
+    current: number;
+    total: number;
+    results: { url: string; title: string; status: 'pending' | 'processing' | 'done' | 'error'; message?: string }[];
+  }>({ isRunning: false, current: 0, total: 0, results: [] });
 
   const getWpApiUrl = (baseUrl: string, endpoint: string = '') => {
     let base = baseUrl.trim();
@@ -2891,6 +2923,134 @@ ${rawText}`;
       setNotification({ message: `Supabase保存エラー: ${e.message}`, type: 'error' });
       setPostingModal(prev => ({ ...prev, saving: false }));
     }
+  };
+
+  const runArticleImprovement = async () => {
+    if (!blogSettings.targetUrl || !blogSettings.username || !blogSettings.appPassword) {
+      setNotification({ message: 'WordPress接続情報が設定されていません。投稿先設定を確認してください。', type: 'error' });
+      return;
+    }
+    const credentials = btoa(`${blogSettings.username.trim()}:${blogSettings.appPassword.replace(/\s+/g, '')}`);
+    const authHeaders = { 'Authorization': `Basic ${credentials}`, 'Content-Type': 'application/json' };
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const modelName = blogSettings.modelSelection === 'pro' ? 'gemini-3.1-pro-preview' : 'gemini-3-flash-preview';
+
+    setImproveStatus({
+      isRunning: true,
+      current: 0,
+      total: UNINDEXED_ARTICLE_URLS.length,
+      results: UNINDEXED_ARTICLE_URLS.map(url => ({
+        url,
+        title: decodeURIComponent(url.replace('https://do-date.com/', '').replace(/\/$/, '')),
+        status: 'pending' as const
+      }))
+    });
+
+    for (let i = 0; i < UNINDEXED_ARTICLE_URLS.length; i++) {
+      const targetUrl = UNINDEXED_ARTICLE_URLS[i];
+      setImproveStatus(prev => ({
+        ...prev,
+        current: i + 1,
+        results: prev.results.map((r, idx) => idx === i ? { ...r, status: 'processing' as const } : r)
+      }));
+
+      try {
+        const slug = decodeURIComponent(targetUrl.replace('https://do-date.com/', '').replace(/\/$/, ''));
+        const searchKeyword = slug.replace(/[【】「」！？。、・\-]/g, ' ').trim().substring(0, 20);
+        const searchRes = await wpProxyFetch(
+          `https://do-date.com/wp-json/wp/v2/posts?search=${encodeURIComponent(searchKeyword)}&per_page=10`,
+          { method: 'GET', headers: authHeaders }
+        );
+        const posts = await searchRes.json();
+        if (!Array.isArray(posts) || posts.length === 0) throw new Error('記事が見つかりませんでした');
+
+        const post = posts.find((p: any) => {
+          const pLink = (p.link || '').replace(/\/$/, '').toLowerCase();
+          const tLink = targetUrl.replace(/\/$/, '').toLowerCase();
+          return pLink === tLink || pLink.includes(slug.substring(0, 15).toLowerCase());
+        }) || posts[0];
+
+        const currentTitle = (post.title?.rendered || slug).replace(/<[^>]+>/g, '');
+        const currentContent = (post.content?.rendered || '').replace(/<[^>]+>/g, '').replace(/\n+/g, '\n').trim().substring(0, 2000);
+
+        setImproveStatus(prev => ({
+          ...prev,
+          results: prev.results.map((r, idx) => idx === i ? { ...r, title: currentTitle } : r)
+        }));
+
+        const improvePrompt = `あなたは美容サロン向けSEOライターです。以下の記事を大幅に改善してください。
+
+【現在のタイトル】
+${currentTitle}
+
+【現在の本文（抜粋）】
+${currentContent}
+
+【改善要件】
+1. 本文を2000文字以上に増量する（現在より大幅に増量すること）
+2. 施術時間・継続期間・体験者の変化など具体的な数値を追加する
+3. 美容サロンオーナーが「導入するかどうか」を判断できる実践的な情報を加える
+4. 見出し（h2, h3）を適切に配置してSEO構造を改善する
+5. 記事末尾に「よくある質問（FAQ）」セクションを追加し、Q&Aを5問入れる
+6. 冒頭1文目にメインキーワード（タイトルの主要語）を必ず含める
+7. 記事末尾に「お問い合わせ」「公式サイトはこちら」などのCTAは入れない
+8. HTML形式で出力し、必ず<h1>タグから始めること
+
+出力はJSON形式: { "content": "HTML形式の本文（<h1>から開始）", "metaDescription": "120〜150文字の要約" }`;
+
+        const improveResponse = await ai.models.generateContent({
+          model: modelName,
+          contents: improvePrompt,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                content: { type: Type.STRING },
+                metaDescription: { type: Type.STRING }
+              },
+              required: ['content', 'metaDescription']
+            },
+            maxOutputTokens: 8192,
+            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
+          }
+        });
+
+        if (!improveResponse?.text) throw new Error('AI応答が空でした');
+        const improved = JSON.parse(improveResponse.text);
+        if (!improved.content || improved.content.length < 500) throw new Error('生成コンテンツが不十分です');
+
+        const updateRes = await wpProxyFetch(
+          `https://do-date.com/wp-json/wp/v2/posts/${post.id}`,
+          {
+            method: 'PUT',
+            headers: authHeaders,
+            body: { content: improved.content, excerpt: improved.metaDescription }
+          }
+        );
+        if (!updateRes.ok) {
+          const errData = await updateRes.json().catch(() => ({}));
+          throw new Error((errData as any)?.message || `WordPress更新エラー(${updateRes.status})`);
+        }
+
+        setImproveStatus(prev => ({
+          ...prev,
+          results: prev.results.map((r, idx) => idx === i ? { ...r, status: 'done' as const, message: '更新完了' } : r)
+        }));
+      } catch (err: any) {
+        setImproveStatus(prev => ({
+          ...prev,
+          results: prev.results.map((r, idx) => idx === i ? { ...r, status: 'error' as const, message: err.message } : r)
+        }));
+      }
+
+      if (i < UNINDEXED_ARTICLE_URLS.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
+    }
+
+    setImproveStatus(prev => ({ ...prev, isRunning: false }));
+    setNotification({ message: '記事改善バッチ処理が完了しました！', type: 'success' });
   };
 
   return (
@@ -5053,6 +5213,76 @@ ${rawText}`;
                 <span>WP Integrated</span>
               </div>
             </div>
+        {/* 未インデックス記事 一括改善 */}
+        <motion.section
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          className="glass rounded-2xl p-6 space-y-5"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <RefreshCw size={15} className="text-gold" />
+              <h2 className="text-xs font-bold uppercase tracking-widest text-black/60">未インデックス記事 一括改善</h2>
+            </div>
+            <span className="text-[9px] text-black/30 font-mono">{UNINDEXED_ARTICLE_URLS.length}件対象</span>
+          </div>
+
+          <p className="text-[11px] text-black/40 leading-relaxed">
+            Search Consoleで「クロール済み・インデックス未登録」と判定された5月の記事をAIが加筆改善し、WordPressを自動更新します。<br />
+            1件あたり約30秒〜1分かかります（全{UNINDEXED_ARTICLE_URLS.length}件で約{Math.ceil(UNINDEXED_ARTICLE_URLS.length * 0.7)}分）。
+          </p>
+
+          {improveStatus.results.length === 0 ? (
+            <button
+              onClick={runArticleImprovement}
+              disabled={improveStatus.isRunning}
+              className="w-full py-3 bg-gold text-white text-[11px] font-bold uppercase tracking-widest rounded-xl shadow-lg shadow-gold/20 hover:bg-gold/90 transition-all disabled:opacity-50 flex items-center justify-center space-x-2"
+            >
+              <Sparkles size={13} />
+              <span>一括改善を開始する</span>
+            </button>
+          ) : (
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-[9px] text-black/40 font-bold uppercase tracking-widest">
+                  <span>進捗</span>
+                  <span>{improveStatus.current} / {improveStatus.total}</span>
+                </div>
+                <div className="h-1 bg-black/5 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gold rounded-full transition-all duration-700"
+                    style={{ width: `${improveStatus.total > 0 ? (improveStatus.current / improveStatus.total) * 100 : 0}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5 max-h-80 overflow-y-auto">
+                {improveStatus.results.map((r, idx) => (
+                  <div key={idx} className="flex items-center justify-between bg-black/3 rounded-xl px-3 py-2">
+                    <p className="text-[10px] text-black/60 truncate flex-1 min-w-0 font-medium">{r.title}</p>
+                    <div className="ml-3 shrink-0">
+                      {r.status === 'pending' && <span className="text-[9px] text-black/25 font-bold">待機中</span>}
+                      {r.status === 'processing' && <span className="text-[9px] text-gold animate-pulse font-bold flex items-center space-x-1"><Loader2 size={9} className="animate-spin" /><span>処理中</span></span>}
+                      {r.status === 'done' && <span className="text-[9px] text-emerald-500 font-bold flex items-center space-x-1"><CheckCircle size={9} /><span>完了</span></span>}
+                      {r.status === 'error' && <span className="text-[9px] text-red-400 font-bold flex items-center space-x-1" title={r.message}><AlertCircle size={9} /><span>エラー</span></span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {!improveStatus.isRunning && (
+                <button
+                  onClick={() => setImproveStatus({ isRunning: false, current: 0, total: 0, results: [] })}
+                  className="text-[10px] text-black/30 hover:text-black/50 underline transition-colors"
+                >
+                  リセット
+                </button>
+              )}
+            </div>
+          )}
+        </motion.section>
+
         </main>
 
       {/* Posting modal - 投稿先選択 + モード選択 */}
