@@ -1646,6 +1646,7 @@ ${rawText}`;
     }[];
   }>({ isRunning: false, current: 0, total: 0, results: [] });
   const [publishRunning, setPublishRunning] = useState(false);
+  const [previewModal, setPreviewModal] = useState<{ title: string; content: string } | null>(null);
   const [improveUrls, setImproveUrls] = useState<string[]>([]);
   const [restoreStatus, setRestoreStatus] = useState<{
     isRunning: boolean;
@@ -5561,9 +5562,15 @@ ${currentContent}
                       <div className="flex-1 min-w-0">
                         <p className="text-[10px] text-black/70 font-bold truncate">{r.title}</p>
                         {r.status === 'done' && r.improvedContent && (
-                          <p className="text-[9px] text-black/40 mt-0.5 line-clamp-2 leading-relaxed">
-                            {r.improvedContent.replace(/<[^>]+>/g, '').substring(0, 80)}…
-                          </p>
+                          <>
+                            <p className="text-[9px] text-black/40 mt-0.5 line-clamp-2 leading-relaxed">
+                              {r.improvedContent.replace(/<[^>]+>/g, '').substring(0, 80)}…
+                            </p>
+                            <button
+                              onClick={() => setPreviewModal({ title: r.title, content: r.improvedContent })}
+                              className="text-[9px] text-gold underline mt-1 hover:text-gold/70"
+                            >全文を見る</button>
+                          </>
                         )}
                         {r.message && r.status === 'error' && <p className="text-[9px] text-red-400 mt-0.5">{r.message.substring(0, 50)}</p>}
                       </div>
@@ -5611,6 +5618,36 @@ ${currentContent}
         </motion.section>
 
         </main>
+
+      {/* 改善記事 全文プレビューモーダル */}
+      <AnimatePresence>
+        {previewModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+            onClick={() => setPreviewModal(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-6 py-4 border-b border-black/10 shrink-0">
+                <h3 className="font-bold text-sm text-black/80 truncate flex-1 mr-3">{previewModal.title}</h3>
+                <button onClick={() => setPreviewModal(null)} className="text-black/30 hover:text-black/60 shrink-0"><X size={18} /></button>
+              </div>
+              <div
+                className="overflow-y-auto px-6 py-5 prose prose-sm max-w-none text-black/80 text-[13px] leading-relaxed"
+                dangerouslySetInnerHTML={{ __html: previewModal.content }}
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Posting modal - 投稿先選択 + モード選択 */}
       <AnimatePresence>
