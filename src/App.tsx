@@ -1633,8 +1633,19 @@ ${rawText}`;
     isRunning: boolean;
     current: number;
     total: number;
-    results: { url: string; title: string; status: 'pending' | 'processing' | 'done' | 'error'; message?: string }[];
+    results: {
+      url: string;
+      title: string;
+      postId: number | null;
+      foundEp: string;
+      improvedContent: string;
+      improvedExcerpt: string;
+      selected: boolean;
+      status: 'pending' | 'processing' | 'done' | 'error';
+      message?: string;
+    }[];
   }>({ isRunning: false, current: 0, total: 0, results: [] });
+  const [publishRunning, setPublishRunning] = useState(false);
   const [improveUrls, setImproveUrls] = useState<string[]>([]);
   const [restoreStatus, setRestoreStatus] = useState<{
     isRunning: boolean;
@@ -2967,6 +2978,11 @@ ${rawText}`;
       results: improveUrls.map(url => ({
         url,
         title: decodeURIComponent(url.replace('https://do-date.com/', '').replace(/\/$/, '')),
+        postId: null,
+        foundEp: '/posts',
+        improvedContent: '',
+        improvedExcerpt: '',
+        selected: false,
         status: 'pending' as const
       }))
     });
@@ -2984,7 +3000,6 @@ ${rawText}`;
         const slug = decodeURIComponent(path.split('/').pop() || path);
         const searchKeyword = slug.replace(/[【】「」！？。、・\-（）]/g, ' ').trim().substring(0, 20);
 
-        // 投稿タイプ候補（URL構造から判断）
         let epCandidates = ['/posts', '/pages'];
         if (path.startsWith('news/')) epCandidates = [`/${newsSlug}`, '/posts'];
         else if (path.startsWith('products/')) epCandidates = ['/pages', '/posts'];
@@ -3061,22 +3076,19 @@ ${currentContent}
         const improved = JSON.parse(improveResponse.text);
         if (!improved.content || improved.content.length < 500) throw new Error('生成コンテンツが不十分です');
 
-        const { response: updateRes } = await wpFetchAuto(
-          `${foundEp}/${post.id}`,
-          {
-            method: 'POST',
-            headers: authHeaders,
-            body: { content: improved.content, excerpt: improved.metaDescription }
-          }
-        );
-        if (!updateRes.ok) {
-          const errData = await updateRes.json().catch(() => ({}));
-          throw new Error((errData as any)?.message || `WordPress更新エラー(${updateRes.status})`);
-        }
-
+        // WordPressには更新せず、結果を保存して確認待ちにする
         setImproveStatus(prev => ({
           ...prev,
-          results: prev.results.map((r, idx) => idx === i ? { ...r, status: 'done' as const, message: '更新完了' } : r)
+          results: prev.results.map((r, idx) => idx === i ? {
+            ...r,
+            postId: post.id,
+            foundEp,
+            improvedContent: improved.content,
+            improvedExcerpt: improved.metaDescription,
+            selected: true,
+            status: 'done' as const,
+            message: '確認待ち'
+          } : r)
         }));
       } catch (err: any) {
         setImproveStatus(prev => ({
@@ -3091,7 +3103,55 @@ ${currentContent}
     }
 
     setImproveStatus(prev => ({ ...prev, isRunning: false }));
-    setNotification({ message: '記事改善バッチ処理が完了しました！', type: 'success' });
+    setNotification({ message: 'AI改善案の生成が完了しました。内容を確認してWordPressに反映してください。', type: 'success' });
+  };
+
+  const runArticlePublish = async () => {
+    const targets = improveStatus.results.filter(r => r.selected && r.status === 'done' && r.postId);
+    if (targets.length === 0) {
+      setNotification({ message: '反映する記事が選択されていません。', type: 'error' });
+      return;
+    }
+    if (!blogSettings.targetUrl || !blogSettings.username || !blogSettings.appPassword) {
+      setNotification({ message: 'WordPress接続情報が設定されていません。', type: 'error' });
+      return;
+    }
+    const credentials = btoa(`${blogSettings.username.trim()}:${blogSettings.appPassword.replace(/\s+/g, '')}`);
+    const authHeaders = { 'Authorization': `Basic ${credentials}`, 'Content-Type': 'application/json' };
+
+    setPublishRunning(true);
+    let successCount = 0;
+
+    for (const target of targets) {
+      try {
+        const { response: updateRes } = await wpFetchAuto(
+          `${target.foundEp}/${target.postId}`,
+          {
+            method: 'POST',
+            headers: authHeaders,
+            body: { content: target.improvedContent, excerpt: target.improvedExcerpt }
+          }
+        );
+        if (!updateRes.ok) {
+          const errData = await updateRes.json().catch(() => ({}));
+          throw new Error((errData as any)?.message || `更新エラー(${updateRes.status})`);
+        }
+        setImproveStatus(prev => ({
+          ...prev,
+          results: prev.results.map(r => r.url === target.url ? { ...r, message: 'WordPress反映済み' } : r)
+        }));
+        successCount++;
+      } catch (err: any) {
+        setImproveStatus(prev => ({
+          ...prev,
+          results: prev.results.map(r => r.url === target.url ? { ...r, status: 'error' as const, message: err.message } : r)
+        }));
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
+    setPublishRunning(false);
+    setNotification({ message: `${successCount}件をWordPressに反映しました！`, type: 'success' });
   };
 
   const runArticleRestore = async () => {
@@ -5400,22 +5460,15 @@ ${currentContent}
 
           {improveStatus.results.length === 0 ? (
             <div className="space-y-4">
-              {/* CSVアップロード */}
               <label className="flex flex-col items-center justify-center w-full border-2 border-dashed border-black/10 rounded-xl py-6 cursor-pointer hover:border-gold/40 hover:bg-gold/3 transition-all">
                 <FileText size={20} className="text-black/20 mb-2" />
                 <span className="text-[11px] font-bold text-black/40">CSVファイルをクリックして選択</span>
                 <span className="text-[9px] text-black/25 mt-1">Search Console → ページ → クロール済み・インデックス未登録 → ダウンロード</span>
-                <input
-                  type="file"
-                  accept=".csv"
-                  className="hidden"
-                  onChange={handleImproveCsvUpload}
-                />
+                <input type="file" accept=".csv" className="hidden" onChange={handleImproveCsvUpload} />
               </label>
-
               {improveUrls.length > 0 && (
                 <>
-                  <div className="space-y-1 max-h-48 overflow-y-auto bg-black/3 rounded-xl p-3">
+                  <div className="space-y-1 max-h-40 overflow-y-auto bg-black/3 rounded-xl p-3">
                     {improveUrls.map((url, i) => (
                       <p key={i} className="text-[9px] text-black/40 truncate font-mono">{url.replace('https://do-date.com/', '')}</p>
                     ))}
@@ -5426,7 +5479,7 @@ ${currentContent}
                     className="w-full py-3 bg-gold text-white text-[11px] font-bold uppercase tracking-widest rounded-xl shadow-lg shadow-gold/20 hover:bg-gold/90 transition-all flex items-center justify-center space-x-2 disabled:opacity-40"
                   >
                     <Sparkles size={13} />
-                    <span>{improveUrls.length}件の改善を開始する</span>
+                    <span>AIで改善案を生成する（確認後に反映）</span>
                   </button>
                   <button
                     onClick={runArticleRestore}
@@ -5446,82 +5499,112 @@ ${currentContent}
                       <span>{restoreStatus.current} / {restoreStatus.total}</span>
                     </div>
                     <div className="h-1 bg-black/5 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-red-400 rounded-full transition-all duration-700"
-                        style={{ width: `${restoreStatus.total > 0 ? (restoreStatus.current / restoreStatus.total) * 100 : 0}%` }}
-                      />
+                      <div className="h-full bg-red-400 rounded-full transition-all duration-700" style={{ width: `${restoreStatus.total > 0 ? (restoreStatus.current / restoreStatus.total) * 100 : 0}%` }} />
                     </div>
                   </div>
                   <div className="space-y-1.5 max-h-80 overflow-y-auto">
                     {restoreStatus.results.map((r, idx) => (
                       <div key={idx} className="flex items-start justify-between bg-black/3 rounded-xl px-3 py-2 gap-2">
-                        <p className="text-[10px] text-black/60 flex-1 min-w-0 font-medium leading-relaxed">{r.title}</p>
+                        <p className="text-[10px] text-black/60 flex-1 min-w-0 font-medium">{r.title}</p>
                         <div className="shrink-0 text-right">
                           {r.status === 'pending' && <span className="text-[9px] text-black/25 font-bold">待機中</span>}
                           {r.status === 'processing' && <span className="text-[9px] text-gold animate-pulse font-bold flex items-center space-x-1"><Loader2 size={9} className="animate-spin" /><span>復元中</span></span>}
-                          {r.status === 'done' && <span className="text-[9px] text-emerald-500 font-bold flex items-center space-x-1"><CheckCircle size={9} /><span>復元完了</span></span>}
-                          {r.status === 'error' && (
-                            <div className="space-y-0.5">
-                              <span className="text-[9px] text-red-400 font-bold flex items-center space-x-1"><AlertCircle size={9} /><span>エラー</span></span>
-                              {r.message && <p className="text-[8px] text-red-300 max-w-[120px] break-words">{r.message.substring(0, 40)}</p>}
-                            </div>
-                          )}
+                          {r.status === 'done' && <span className="text-[9px] text-emerald-500 font-bold flex items-center space-x-1"><CheckCircle size={9} /><span>{r.message || '復元完了'}</span></span>}
+                          {r.status === 'error' && <span className="text-[9px] text-red-400 font-bold">{r.message?.substring(0, 30)}</span>}
                         </div>
                       </div>
                     ))}
                   </div>
                   {!restoreStatus.isRunning && (
-                    <button
-                      onClick={() => setRestoreStatus({ isRunning: false, current: 0, total: 0, results: [] })}
-                      className="text-[10px] text-black/30 hover:text-black/50 underline transition-colors"
-                    >
-                      復元結果をクリア
-                    </button>
+                    <button onClick={() => setRestoreStatus({ isRunning: false, current: 0, total: 0, results: [] })} className="text-[10px] text-black/30 hover:text-black/50 underline">復元結果をクリア</button>
                   )}
                 </div>
               )}
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-[9px] text-black/40 font-bold uppercase tracking-widest">
-                  <span>進捗</span>
-                  <span>{improveStatus.current} / {improveStatus.total}</span>
+              {/* 生成進捗バー */}
+              {(improveStatus.isRunning || improveStatus.results.some(r => r.status === 'pending' || r.status === 'processing')) && (
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-[9px] text-black/40 font-bold uppercase tracking-widest">
+                    <span>AI生成進捗</span>
+                    <span>{improveStatus.current} / {improveStatus.total}</span>
+                  </div>
+                  <div className="h-1 bg-black/5 rounded-full overflow-hidden">
+                    <div className="h-full bg-gold rounded-full transition-all duration-700" style={{ width: `${improveStatus.total > 0 ? (improveStatus.current / improveStatus.total) * 100 : 0}%` }} />
+                  </div>
                 </div>
-                <div className="h-1 bg-black/5 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gold rounded-full transition-all duration-700"
-                    style={{ width: `${improveStatus.total > 0 ? (improveStatus.current / improveStatus.total) * 100 : 0}%` }}
-                  />
-                </div>
-              </div>
+              )}
 
-              <div className="space-y-1.5 max-h-80 overflow-y-auto">
+              {/* 確認リスト */}
+              {!improveStatus.isRunning && improveStatus.results.some(r => r.status === 'done') && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-[11px] text-emerald-700 font-bold">
+                  改善案が生成されました。反映する記事にチェックを入れて「WordPressに反映」を押してください。
+                </div>
+              )}
+
+              <div className="space-y-2 max-h-96 overflow-y-auto">
                 {improveStatus.results.map((r, idx) => (
-                  <div key={idx} className="flex items-start justify-between bg-black/3 rounded-xl px-3 py-2 gap-2">
-                    <p className="text-[10px] text-black/60 flex-1 min-w-0 font-medium leading-relaxed">{r.title}</p>
-                    <div className="shrink-0 text-right">
-                      {r.status === 'pending' && <span className="text-[9px] text-black/25 font-bold">待機中</span>}
-                      {r.status === 'processing' && <span className="text-[9px] text-gold animate-pulse font-bold flex items-center space-x-1"><Loader2 size={9} className="animate-spin" /><span>処理中</span></span>}
-                      {r.status === 'done' && <span className="text-[9px] text-emerald-500 font-bold flex items-center space-x-1"><CheckCircle size={9} /><span>完了</span></span>}
-                      {r.status === 'error' && (
-                        <div className="space-y-0.5">
-                          <span className="text-[9px] text-red-400 font-bold flex items-center space-x-1"><AlertCircle size={9} /><span>エラー</span></span>
-                          {r.message && <p className="text-[8px] text-red-300 max-w-[120px] break-words">{r.message.substring(0, 40)}</p>}
-                        </div>
+                  <div key={idx} className={`rounded-xl px-3 py-2.5 border transition-all ${r.status === 'done' && r.selected ? 'bg-emerald-50 border-emerald-200' : r.status === 'done' ? 'bg-black/3 border-black/5' : 'bg-black/3 border-transparent'}`}>
+                    <div className="flex items-start gap-3">
+                      {r.status === 'done' && (
+                        <input
+                          type="checkbox"
+                          checked={r.selected}
+                          onChange={() => setImproveStatus(prev => ({
+                            ...prev,
+                            results: prev.results.map((item, i) => i === idx ? { ...item, selected: !item.selected } : item)
+                          }))}
+                          className="mt-0.5 shrink-0 w-4 h-4 accent-emerald-500 cursor-pointer"
+                        />
                       )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] text-black/70 font-bold truncate">{r.title}</p>
+                        {r.status === 'done' && r.improvedContent && (
+                          <p className="text-[9px] text-black/40 mt-0.5 line-clamp-2 leading-relaxed">
+                            {r.improvedContent.replace(/<[^>]+>/g, '').substring(0, 80)}…
+                          </p>
+                        )}
+                        {r.message && r.status === 'error' && <p className="text-[9px] text-red-400 mt-0.5">{r.message.substring(0, 50)}</p>}
+                      </div>
+                      <div className="shrink-0 text-right">
+                        {r.status === 'pending' && <span className="text-[9px] text-black/25 font-bold">待機中</span>}
+                        {r.status === 'processing' && <span className="text-[9px] text-gold animate-pulse font-bold flex items-center space-x-1"><Loader2 size={9} className="animate-spin" /><span>生成中</span></span>}
+                        {r.status === 'done' && <span className="text-[9px] text-emerald-500 font-bold">{r.message === 'WordPress反映済み' ? '反映済み' : '確認待ち'}</span>}
+                        {r.status === 'error' && <span className="text-[9px] text-red-400 font-bold flex items-center space-x-1"><AlertCircle size={9} /><span>エラー</span></span>}
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
 
               {!improveStatus.isRunning && (
-                <button
-                  onClick={() => { setImproveStatus({ isRunning: false, current: 0, total: 0, results: [] }); setImproveUrls([]); }}
-                  className="text-[10px] text-black/30 hover:text-black/50 underline transition-colors"
-                >
-                  リセット（別のCSVをアップロード）
-                </button>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-[9px] text-black/40">
+                    <button
+                      onClick={() => setImproveStatus(prev => ({ ...prev, results: prev.results.map(r => r.status === 'done' ? { ...r, selected: true } : r) }))}
+                      className="underline hover:text-black/60"
+                    >すべて選択</button>
+                    <button
+                      onClick={() => setImproveStatus(prev => ({ ...prev, results: prev.results.map(r => ({ ...r, selected: false })) }))}
+                      className="underline hover:text-black/60"
+                    >すべて解除</button>
+                  </div>
+                  <button
+                    onClick={runArticlePublish}
+                    disabled={publishRunning || !improveStatus.results.some(r => r.selected && r.status === 'done')}
+                    className="w-full py-3 bg-emerald-500 text-white text-[11px] font-bold uppercase tracking-widest rounded-xl shadow-lg hover:bg-emerald-600 transition-all flex items-center justify-center space-x-2 disabled:opacity-40"
+                  >
+                    {publishRunning ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
+                    <span>{publishRunning ? 'WordPressに反映中...' : `選択した${improveStatus.results.filter(r => r.selected && r.status === 'done').length}件をWordPressに反映`}</span>
+                  </button>
+                  <button
+                    onClick={() => { setImproveStatus({ isRunning: false, current: 0, total: 0, results: [] }); setImproveUrls([]); }}
+                    className="text-[10px] text-black/30 hover:text-black/50 underline transition-colors w-full text-center"
+                  >
+                    リセット（別のCSVをアップロード）
+                  </button>
+                </div>
               )}
             </div>
           )}
