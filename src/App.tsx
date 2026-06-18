@@ -5564,9 +5564,15 @@ ${originalHtml.substring(0, 12000)}
                               {r.improvedContent.replace(/<[^>]+>/g, '').substring(0, 80)}…
                             </p>
                             <button
-                              onClick={() => setPreviewModal({ title: r.title, content: r.improvedContent })}
+                              onClick={() => {
+                                const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${r.title}</title><style>body{font-family:'Hiragino Sans','Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;max-width:800px;margin:0 auto;padding:20px 24px;color:#333;line-height:1.8}h1{font-size:1.8em;font-weight:bold;margin:0 0 1em;line-height:1.4}h2{font-size:1.4em;font-weight:bold;margin:2em 0 0.6em;padding-bottom:0.3em;border-bottom:2px solid #eee}h3{font-size:1.2em;font-weight:bold;margin:1.5em 0 0.4em}p{margin:0.8em 0}img{max-width:100%;height:auto;display:block;margin:1em auto}a{color:#0066cc}ul,ol{padding-left:1.5em;margin:0.8em 0}li{margin:0.3em 0}table{width:100%;border-collapse:collapse;margin:1em 0}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f5f5f5}</style></head><body>${r.improvedContent}</body></html>`;
+                                const blob = new Blob([html], { type: 'text/html' });
+                                const url = URL.createObjectURL(blob);
+                                window.open(url, '_blank');
+                                setTimeout(() => URL.revokeObjectURL(url), 60000);
+                              }}
                               className="text-[9px] text-gold underline mt-1 hover:text-gold/70"
-                            >全文を見る</button>
+                            >全文を見る（新しいタブ）</button>
                           </>
                         )}
                         {r.message && r.status === 'error' && <p className="text-[9px] text-red-400 mt-0.5">{r.message.substring(0, 50)}</p>}
