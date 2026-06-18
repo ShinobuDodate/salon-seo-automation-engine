@@ -3028,32 +3028,29 @@ ${rawText}`;
         if (!post) throw new Error('記事が見つかりませんでした');
 
         const currentTitle = (post.title?.rendered || slug).replace(/<[^>]+>/g, '');
-        const currentContent = (post.content?.rendered || '').replace(/<[^>]+>/g, '').replace(/\n+/g, '\n').trim().substring(0, 2000);
+        const originalHtml = (post.content?.rendered || '').trim();
 
         setImproveStatus(prev => ({
           ...prev,
           results: prev.results.map((r, idx) => idx === i ? { ...r, title: currentTitle } : r)
         }));
 
-        const improvePrompt = `あなたは美容サロン向けSEOライターです。以下の記事を大幅に改善してください。
+        const improvePrompt = `あなたは美容サロン向けSEOライターです。以下のWordPress記事HTMLを軽微に改善してください。
 
-【現在のタイトル】
+【記事タイトル】
 ${currentTitle}
 
-【現在の本文（抜粋）】
-${currentContent}
+【元のHTML】
+${originalHtml.substring(0, 12000)}
 
-【改善要件】
-1. 本文を2000文字以上に増量する（現在より大幅に増量すること）
-2. 施術時間・継続期間・体験者の変化など具体的な数値を追加する
-3. 美容サロンオーナーが「導入するかどうか」を判断できる実践的な情報を加える
-4. 見出し（h2, h3）を適切に配置してSEO構造を改善する
-5. 記事末尾に「よくある質問（FAQ）」セクションを追加し、Q&Aを5問入れる
-6. 冒頭1文目にメインキーワード（タイトルの主要語）を必ず含める
-7. 記事末尾に「お問い合わせ」「公式サイトはこちら」などのCTAは入れない
-8. HTML形式で出力し、必ず<h1>タグから始めること
+【厳守ルール】
+- <img>タグ・<a>タグ・<div>タグ・クラス属性・カスタムHTML構造はすべて一切変更しないこと
+- 記事の内容・テーマ・構成は変えないこと
+- テキスト文章を自然な日本語に整え、読みやすくする程度の修正のみ行う
+- 新しいセクション・FAQ・見出しを勝手に追加しないこと
+- 元のHTMLをベースに、文章だけを最小限改善して返すこと
 
-出力はJSON形式: { "content": "HTML形式の本文（<h1>から開始）", "metaDescription": "120〜150文字の要約" }`;
+出力はJSON形式: { "content": "改善後のHTML全文", "metaDescription": "120〜150文字の要約" }`;
 
         const improveResponse = await ai.models.generateContent({
           model: modelName,
@@ -3075,7 +3072,7 @@ ${currentContent}
 
         if (!improveResponse?.text) throw new Error('AI応答が空でした');
         const improved = JSON.parse(improveResponse.text);
-        if (!improved.content || improved.content.length < 500) throw new Error('生成コンテンツが不十分です');
+        if (!improved.content || improved.content.length < 100) throw new Error('生成コンテンツが不十分です');
 
         // WordPressには更新せず、結果を保存して確認待ちにする
         setImproveStatus(prev => ({
