@@ -5221,7 +5221,7 @@ ${originalHtml.substring(0, 12000)}
                               </div>
                             </div>
                             <div className="flex items-center space-x-3">
-                              {post.status !== 'posted' && (
+                              {(
                                 <div className="flex items-center space-x-2">
                                   <button
                                     onClick={() => postToBlog(post, true)}
@@ -5260,7 +5260,7 @@ ${originalHtml.substring(0, 12000)}
                                 </div>
                               )}
                               <div className="flex items-center space-x-3">
-                                <button 
+                                <button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     deletePost(post.id);
