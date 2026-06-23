@@ -1541,6 +1541,7 @@ ${rawText}`;
         }
       }
 
+      setBlogPosts(prev => [...prev].sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()));
       setState({ status: 'completed' });
       setBlogSettings(prev => ({ ...prev, sourceFiles: [] }));
     } catch (error: any) {
