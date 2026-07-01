@@ -6,8 +6,8 @@ import { createServer as createViteServer } from "vite";
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
-const supabaseKey = (process.env.SUPABASE_ANON_KEY || '').replace(/\s+/g, '');
-const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
+const supabaseKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '').replace(/\s+/g, '');
+const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey, { auth: { autoRefreshToken: false, persistSession: false } }) : null;
 
 // --- WP publish ---
 async function publishToWordPress(post: any): Promise<{ success: boolean; wpPostId?: number; imageUrl?: string; error?: string }> {
