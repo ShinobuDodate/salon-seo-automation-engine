@@ -447,7 +447,7 @@ function AppContent() {
       tone: "専門的・信頼感重視",
       how: "理解してもらう",
       detailedInstructions: "",
-      modelSelection: 'pro' as 'pro' | 'flash',
+      modelSelection: 'flash' as 'pro' | 'flash',
       socialAccounts: [] as SocialAccount[],
       commonContents: [
         {
@@ -838,7 +838,7 @@ ${imageHtml}
               const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
               // レートリミット対策：失敗時に自動リトライ
               const response = await callGeminiWithRetry(() => ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
+                model: 'gemini-3.1-flash-lite',
                 contents: { parts: [
                   { inlineData: { data: base64, mimeType } },
                   { text: 'このファイルの内容を詳しく要約してください。重要な情報・数値・固有名詞をすべて含めてください。' }
@@ -881,7 +881,7 @@ ${imageHtml}
     
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const modelName = blogSettings.modelSelection === 'pro' ? 'gemini-3.1-pro-preview' : 'gemini-3-flash-preview';
+      const modelName = blogSettings.modelSelection === 'pro' ? 'gemini-3.1-pro-preview' : 'gemini-3.1-flash-lite';
       
       const repairPrompt = `あなたは高度なJSONデータ修復専門のAIです。
 以下のテキストは、ブログ記事生成AIが出力した「不完全」または「壊れた」JSONデータです。
@@ -999,7 +999,7 @@ ${rawText}`;
     };
 
     try {
-      const modelName = blogSettings.modelSelection === 'pro' ? 'gemini-3.1-pro-preview' : 'gemini-3-flash-preview';
+      const modelName = blogSettings.modelSelection === 'pro' ? 'gemini-3.1-pro-preview' : 'gemini-3.1-flash-lite';
 
       // Select a random angle to increase variety
       const angles = [
@@ -1342,7 +1342,7 @@ ${rawText}`;
       if (isQuotaError) {
         errorMessage = 'APIの利用制限（クォータ）に達しました。';
         if (blogSettings.modelSelection === 'pro') {
-          errorMessage += ' Gemini 3.1 Proは制限が厳しいため、設定パネル下部で「Gemini 3 Flash」に切り替えてお試しください。';
+          errorMessage += ' Gemini 3.1 Proは無料枠では利用できないため、設定パネル下部で「Gemini 3.1 Flash Lite」に切り替えてお試しください。';
         } else {
           errorMessage += ' 少し時間を置いてから再度お試しいただくか、生成する記事数を減らしてください。';
         }
@@ -1369,7 +1369,7 @@ ${rawText}`;
 
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const modelName = blogSettings.modelSelection === 'pro' ? 'gemini-3.1-pro-preview' : 'gemini-3-flash-preview';
+      const modelName = blogSettings.modelSelection === 'pro' ? 'gemini-3.1-pro-preview' : 'gemini-3.1-flash-lite';
       
       const prompt = `以下のブログ記事の内容を元に、Instagram投稿用のキャプションとハッシュタグを作成してください。
 
@@ -1440,7 +1440,7 @@ ${rawText}`;
 
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const modelName = blogSettings.modelSelection === 'pro' ? 'gemini-3.1-pro-preview' : 'gemini-3-flash-preview';
+      const modelName = blogSettings.modelSelection === 'pro' ? 'gemini-3.1-pro-preview' : 'gemini-3.1-flash-lite';
       
       const activeKeywords = activeKeywordsArray.join(', ');
       const variationPrompt = `あなたは美容サロン専門のSEOライターです。
@@ -1559,7 +1559,7 @@ ${rawText}`;
       if (isQuotaError) {
         errorMessage = 'APIの利用制限（クォータ）に達しました。';
         if (blogSettings.modelSelection === 'pro') {
-          errorMessage += ' Gemini 3.1 Proは制限が厳しいため、設定パネル下部で「Gemini 3 Flash」に切り替えてお試しください。';
+          errorMessage += ' Gemini 3.1 Proは無料枠では利用できないため、設定パネル下部で「Gemini 3.1 Flash Lite」に切り替えてお試しください。';
         } else {
           errorMessage = 'APIの利用制限に達しました。少し時間を置いてから再度お試しいただくか、生成する記事数を減らしてください。';
         }
@@ -2970,7 +2970,7 @@ ${rawText}`;
     const credentials = btoa(`${blogSettings.username.trim()}:${blogSettings.appPassword.replace(/\s+/g, '')}`);
     const authHeaders = { 'Authorization': `Basic ${credentials}`, 'Content-Type': 'application/json' };
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const modelName = blogSettings.modelSelection === 'pro' ? 'gemini-3.1-pro-preview' : 'gemini-3-flash-preview';
+    const modelName = blogSettings.modelSelection === 'pro' ? 'gemini-3.1-pro-preview' : 'gemini-3.1-flash-lite';
     const newsSlug = blogSettings.newsSlug || 'news';
 
     setImproveStatus({
@@ -4815,21 +4815,21 @@ ${originalHtml.substring(0, 12000)}
                                   : 'bg-black/5 border-black/10 text-black/40 hover:border-black/20'
                                 }`}
                               >
-                                Gemini 3.1 Pro (高精度)
+                                Gemini 3.1 Pro (高精度・要課金)
                               </button>
-                              <button 
+                              <button
                                 onClick={() => setBlogSettings({...blogSettings, modelSelection: 'flash'})}
                                 className={`flex-1 py-2 rounded-lg text-[10px] font-bold transition-all border ${
-                                  blogSettings.modelSelection === 'flash' 
-                                  ? 'bg-gold/20 border-gold text-gold' 
+                                  blogSettings.modelSelection === 'flash'
+                                  ? 'bg-gold/20 border-gold text-gold'
                                   : 'bg-black/5 border-black/10 text-black/40 hover:border-black/20'
                                 }`}
                               >
-                                Gemini 3 Flash (高速)
+                                Gemini 3.1 Flash Lite (高速・無料枠推奨)
                               </button>
                             </div>
                             <p className="text-[8px] text-black/30 leading-tight">
-                              ※Proは品質が高いですが、無料枠では制限がかかりやすいため、大量生成時はFlashがおすすめです。
+                              ※Proは無料枠では利用できません（課金設定が必要）。Flash Liteは無料枠でも1日500回まで利用でき、大量生成に向いています。
                             </p>
                           </div>
                         </div>
@@ -4951,7 +4951,9 @@ ${originalHtml.substring(0, 12000)}
             <div className="bg-gold/5 border border-gold/20 rounded-xl p-4">
               <p className="text-[10px] text-gold/80 uppercase tracking-widest font-bold mb-1">AI Engine Active</p>
               <p className="text-[11px] text-black/40 leading-relaxed">
-                Gemini 3.1 Proを使用しています。サロンのSEOに特化した高品質な記事を自動生成します。
+                {blogSettings.modelSelection === 'pro'
+                  ? 'Gemini 3.1 Pro を使用しています。サロンのSEOに特化した高品質な記事を自動生成します。（無料枠では利用できません）'
+                  : 'Gemini 3.1 Flash Lite を使用しています。サロンのSEOに特化した記事を、無料枠内で高速に自動生成します。'}
               </p>
             </div>
           </div>
