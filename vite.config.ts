@@ -7,6 +7,12 @@ export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
     plugins: [react(), tailwindcss()],
+    define: {
+      // App.tsx calls the Gemini SDK directly from the browser using
+      // process.env.GEMINI_API_KEY (AI Studio Build's convention, not Vite's).
+      // Inline it at build time so the same code works outside AI Studio.
+      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
