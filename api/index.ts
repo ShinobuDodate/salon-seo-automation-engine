@@ -679,8 +679,27 @@ export function createApp() {
     }
   });
 
-  // --- Persist a generated article for reuse (Excel export, history) and move its
-  // images out of the request body into Supabase Storage so they survive reloads. ---
+  // --- Upload a single image to Supabase Storage. Kept separate from save-article
+  // so each image travels in its own request: bundling all three (16:9/1:1/9:16)
+  // into one JSON body can exceed Vercel's ~4.5MB request size limit and gets
+  // rejected with a plain-text 413 before it ever reaches this handler. ---
+  app.post("/api/upload-image", async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });
+    try {
+      const { dataUrl, filename } = req.body || {};
+      if (!dataUrl || !filename) return res.status(400).json({ error: 'dataUrl and filename are required' });
+      const url = await uploadArticleImage(dataUrl, filename);
+      if (!url) return res.status(500).json({ error: '画像のアップロードに失敗しました' });
+      res.json({ url });
+    } catch (e: any) {
+      console.error('[upload-image] Error:', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // --- Persist a generated article for reuse (Excel export, history). Images should
+  // already be uploaded via /api/upload-image by this point (see above); this also
+  // accepts a raw base64 image as a fallback but callers should avoid that path. ---
   app.post("/api/save-article", async (req, res) => {
     if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });
     try {

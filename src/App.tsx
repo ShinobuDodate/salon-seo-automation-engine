@@ -1346,8 +1346,43 @@ ${rawText}`;
       // Storage, so they survive reload/tab-close and can be reused (Excel export,
       // history) instead of being silently dropped before the localStorage save.
       // Fire-and-forget: generation is already done from the user's perspective.
+      // Each image is uploaded in its own request — bundling all three (16:9/1:1/9:16)
+      // base64 blobs into one JSON body can exceed Vercel's ~4.5MB request limit.
       (async () => {
         try {
+          const uploadOne = async (dataUrl: string | undefined, suffix: string): Promise<string | undefined> => {
+            if (!dataUrl || !dataUrl.startsWith('data:')) return dataUrl;
+            const mimeType = dataUrl.match(/^data:(.*?);base64,/)?.[1] || 'image/png';
+            const ext = mimeType.split('/')[1] || 'png';
+            try {
+              const upRes = await fetch('/api/upload-image', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ dataUrl, filename: `${newPost.id}-${suffix}.${ext}` })
+              });
+              const upData = await parseJsonResponse(upRes);
+              return upData?.url || undefined;
+            } catch (e) {
+              console.error(`[upload-image] Failed to upload ${suffix} image:`, e);
+              return undefined;
+            }
+          };
+
+          const [uploadedImageUrl, uploadedImageUrl1x1, uploadedImageUrl9x16] = await Promise.all([
+            uploadOne(newPost.imageUrl, 'main'),
+            uploadOne(newPost.imageUrl1x1, '1x1'),
+            uploadOne(newPost.imageUrl9x16, '9x16'),
+          ]);
+
+          if (uploadedImageUrl || uploadedImageUrl1x1 || uploadedImageUrl9x16) {
+            setBlogPosts(prev => prev.map(p => p.id === newPost.id ? {
+              ...p,
+              imageUrl: uploadedImageUrl || p.imageUrl,
+              imageUrl1x1: uploadedImageUrl1x1 || p.imageUrl1x1,
+              imageUrl9x16: uploadedImageUrl9x16 || p.imageUrl9x16,
+            } : p));
+          }
+
           const saveRes = await fetch('/api/save-article', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1361,20 +1396,12 @@ ${rawText}`;
               instaHashtags: newPost.instaHashtags,
               threadsCaption: newPost.threadsCaption,
               keywords: newPost.keywords,
-              imageUrl: newPost.imageUrl,
-              imageUrl1x1: newPost.imageUrl1x1,
-              imageUrl9x16: newPost.imageUrl9x16,
+              imageUrl: uploadedImageUrl || newPost.imageUrl,
+              imageUrl1x1: uploadedImageUrl1x1 || newPost.imageUrl1x1,
+              imageUrl9x16: uploadedImageUrl9x16 || newPost.imageUrl9x16,
             })
           });
-          const saveData = await parseJsonResponse(saveRes);
-          if (saveData?.success) {
-            setBlogPosts(prev => prev.map(p => p.id === newPost.id ? {
-              ...p,
-              imageUrl: saveData.imageUrl || p.imageUrl,
-              imageUrl1x1: saveData.imageUrl1x1 || p.imageUrl1x1,
-              imageUrl9x16: saveData.imageUrl9x16 || p.imageUrl9x16,
-            } : p));
-          }
+          await parseJsonResponse(saveRes);
         } catch (e) {
           console.error('[save-article] Failed to persist article:', e);
         }
