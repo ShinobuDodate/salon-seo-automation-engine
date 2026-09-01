@@ -661,7 +661,13 @@ export function createApp() {
     const { topic } = req.body || {};
     try {
       const { default: Anthropic } = await import('@anthropic-ai/sdk');
-      const anthropic = new Anthropic({ apiKey });
+      const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID;
+      const anthropic = new Anthropic({
+        apiKey,
+        // Identity-linked API keys (Claude Console's current key type) require
+        // the workspace they act in to be specified explicitly.
+        ...(workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': workspaceId } } : {})
+      });
       const message = await anthropic.messages.create({
         model: 'claude-sonnet-5',
         max_tokens: 512,
