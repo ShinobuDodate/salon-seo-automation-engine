@@ -1324,7 +1324,7 @@ ${rawText}`;
       setBlogPosts(prev => [newPost, ...prev].slice(0, 100));
       if (!isBatchMode) {
         setState({ status: 'completed', imageUrl });
-        setEditingPost(newPost);
+        // Not auto-opening the edit modal: the post is already saved to the list above.
         setBlogSettings(prev => ({ ...prev, sourceFiles: [] }));
       }
       return newPost;
@@ -1529,10 +1529,10 @@ ${rawText}`;
         const customImage = uploadedImagesCopy.length > 0
           ? uploadedImagesCopy[index % uploadedImagesCopy.length]
           : undefined;
-        const newPost = await generateBlogPost(v, scheduledTime, true, customImage);
-        if (variations.length === 1 && newPost) {
-          setEditingPost(newPost);
-        }
+        // Note: generateBlogPost already adds the post to blogPosts via setBlogPosts.
+        // We intentionally do NOT auto-open the edit modal here anymore — it looked
+        // like an extra "confirm to save" step, when the article was already saved.
+        await generateBlogPost(v, scheduledTime, true, customImage);
         index++;
         
         // Small delay to avoid rate limits
@@ -5082,7 +5082,7 @@ ${originalHtml.substring(0, 12000)}
                           animate={{ opacity: 1, y: 0 }}
                           className="bg-black/5 border border-black/10 rounded-xl p-4 space-y-4"
                         >
-                          <div className="flex gap-4">
+                          <div className="flex flex-wrap gap-4">
                             {/* 左列: 画像 + サイズ選択 */}
                             <div className="flex-shrink-0 space-y-2">
                               <div className="flex gap-2 items-end">
@@ -5157,7 +5157,7 @@ ${originalHtml.substring(0, 12000)}
                             </div>
 
                             {/* 右列: タイトル + プレビュー */}
-                            <div className="flex-1 min-w-0 space-y-2">
+                            <div className="flex-1 min-w-[280px] space-y-2">
                               <div className="flex items-center space-x-2">
                                 <h4 className="text-sm font-bold text-black/90 truncate">{post.title}</h4>
                                 {post.instaCaption && (
@@ -5204,8 +5204,8 @@ ${originalHtml.substring(0, 12000)}
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center justify-between pt-2 border-t border-black/5">
-                            <div className="flex items-center space-x-2">
+                          <div className="flex flex-wrap items-center justify-between gap-y-2 pt-2 border-t border-black/5">
+                            <div className="flex flex-wrap items-center gap-2">
                               <span className={`text-[10px] px-2 py-0.5 rounded-full border uppercase font-bold ${
                                 post.status === 'posted' 
                                 ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
@@ -5267,46 +5267,46 @@ ${originalHtml.substring(0, 12000)}
                                 </div>
                               </div>
                             </div>
-                            <div className="flex items-center space-x-3">
+                            <div className="flex flex-wrap items-center gap-2">
                               {(
-                                <div className="flex items-center space-x-2">
+                                <div className="flex flex-wrap items-center gap-2">
                                   <button
                                     onClick={() => postToBlog(post, true)}
                                     disabled={currentlyPostingId === post.id}
-                                    className={`text-[10px] flex items-center space-x-1 transition-all px-2 py-1 rounded-md ${
+                                    className={`text-xs font-medium flex items-center space-x-1 transition-all px-3 py-1.5 rounded-md ${
                                       currentlyPostingId === post.id
                                       ? 'bg-emerald-500/20 text-emerald-400 cursor-not-allowed animate-pulse'
                                       : 'text-emerald-400 hover:bg-emerald-500/10 hover:underline'
                                     }`}
                                   >
-                                    {currentlyPostingId === post.id ? <Loader2 size={12} className="animate-spin" /> : <Play size={10} />}
+                                    {currentlyPostingId === post.id ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
                                     <span>{currentlyPostingId === post.id ? '送信中...' : '今すぐ投稿'}</span>
                                   </button>
 
                                   <button
                                     onClick={() => setPostingModal({ post, mode: 'scheduled', loopEnabled: false, loopIntervalDays: 43200, loopTime: '', saving: false })}
                                     disabled={currentlyPostingId === post.id}
-                                    className={`text-[10px] flex items-center space-x-1 transition-all px-2 py-1 rounded-md ${
+                                    className={`text-xs font-medium flex items-center space-x-1 transition-all px-3 py-1.5 rounded-md ${
                                       currentlyPostingId === post.id
                                       ? 'bg-gold/20 text-gold cursor-not-allowed animate-pulse'
                                       : 'text-gold hover:bg-gold/10 hover:underline'
                                     }`}
                                   >
-                                    {currentlyPostingId === post.id ? <Loader2 size={12} className="animate-spin" /> : <Calendar size={10} />}
+                                    {currentlyPostingId === post.id ? <Loader2 size={12} className="animate-spin" /> : <Calendar size={12} />}
                                     <span>{currentlyPostingId === post.id ? '送信中...' : '予約投稿'}</span>
                                   </button>
 
                                   <button
                                     onClick={() => setPostingModal({ post, mode: 'loop', loopEnabled: true, loopIntervalDays: 43200, loopTime: '', saving: false })}
                                     disabled={currentlyPostingId === post.id}
-                                    className="text-[10px] flex items-center space-x-1 transition-all px-2 py-1 rounded-md text-purple-400 hover:bg-purple-500/10 hover:underline"
+                                    className="text-xs font-medium flex items-center space-x-1 transition-all px-3 py-1.5 rounded-md text-purple-400 hover:bg-purple-500/10 hover:underline"
                                   >
-                                    <RefreshCw size={10} />
+                                    <RefreshCw size={12} />
                                     <span>ループ予約</span>
                                   </button>
                                 </div>
                               )}
-                              <div className="flex items-center space-x-3">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -5315,29 +5315,29 @@ ${originalHtml.substring(0, 12000)}
                                   className="p-2 text-black/20 hover:text-red-500 transition-colors"
                                   title="この記事を削除"
                                 >
-                                  <Trash2 size={14} />
+                                  <Trash2 size={16} />
                                 </button>
-                                <button 
+                                <button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     navigator.clipboard.writeText(post.plainContent || '');
                                     setNotification({ message: '本文（プレーンテキスト）をコピーしました！', type: 'success' });
                                   }}
-                                  className="text-[10px] text-emerald-500 hover:underline flex items-center space-x-1"
+                                  className="text-xs font-medium text-emerald-500 hover:underline flex items-center space-x-1 px-2 py-1.5"
                                 >
-                                  <CheckCircle size={10} />
+                                  <CheckCircle size={12} />
                                   <span>本文コピー</span>
                                 </button>
                                 <button
                                   onClick={() => setPreviewPost(post)}
-                                  className="text-[10px] text-blue-400 hover:underline flex items-center space-x-1"
+                                  className="text-xs font-medium text-blue-400 hover:underline flex items-center space-x-1 px-2 py-1.5"
                                 >
-                                  <Eye size={10} />
+                                  <Eye size={12} />
                                   <span>Webプレビュー</span>
                                 </button>
                                 <button
                                   onClick={() => setEditingPost(post)}
-                                  className="text-[10px] text-gold hover:underline"
+                                  className="text-xs font-medium text-gold hover:underline px-2 py-1.5"
                                 >
                                   詳細・編集
                                 </button>
