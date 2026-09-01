@@ -111,6 +111,34 @@ async function publishToWordPress(post: any): Promise<{ success: boolean; wpPost
   return { success: false, error: lastError || 'WP post creation failed', imageUrl: uploadedImageUrl };
 }
 
+// --- Persistent article image storage (Supabase Storage) ---
+// Generated images only ever lived as base64 in browser memory/localStorage, which
+// (a) gets stripped before localStorage save (too large) so images vanish on reload,
+// and (b) can push JSON payloads past Vercel's request body size limit, causing a
+// plain-text 413 response that crashes client-side JSON.parse. Uploading to storage
+// right after generation and swapping in the public URL fixes both.
+async function uploadArticleImage(dataUrl: string | undefined, filenamePrefix: string): Promise<string | null> {
+  if (!supabase || !dataUrl || !dataUrl.startsWith('data:')) return dataUrl || null;
+  try {
+    const mimeMatch = dataUrl.match(/^data:(.*?);base64,/);
+    const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
+    const ext = mimeType.split('/')[1] || 'png';
+    const base64 = dataUrl.split(',')[1] || '';
+    const buffer = Buffer.from(base64, 'base64');
+    const path = `${filenamePrefix}.${ext}`;
+    const { error } = await supabase.storage.from('article-images').upload(path, buffer, {
+      contentType: mimeType,
+      upsert: true,
+    });
+    if (error) { console.error('[uploadArticleImage] Error:', error.message); return null; }
+    const { data } = supabase.storage.from('article-images').getPublicUrl(path);
+    return data?.publicUrl || null;
+  } catch (e: any) {
+    console.error('[uploadArticleImage] Error:', e.message);
+    return null;
+  }
+}
+
 // --- Instagram Story publish ---
 async function publishToInstagramStory(imageUrl: string, accountId: string, accessToken: string): Promise<{ success: boolean; postId?: string; error?: string }> {
   if (!imageUrl || !accountId || !accessToken) return { success: false, error: 'Instagram credentials or image URL missing' };
@@ -647,6 +675,87 @@ export function createApp() {
       res.json({ text });
     } catch (e: any) {
       console.error('[generate-article] Error:', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // --- Persist a generated article for reuse (Excel export, history) and move its
+  // images out of the request body into Supabase Storage so they survive reloads. ---
+  app.post("/api/save-article", async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });
+    try {
+      const b = req.body || {};
+      const idPrefix = (b.id || (Date.now().toString() + Math.random().toString(36).substring(2, 9))).toString();
+
+      const [imageUrl, imageUrl1x1, imageUrl9x16] = await Promise.all([
+        uploadArticleImage(b.imageUrl, `${idPrefix}-main`),
+        uploadArticleImage(b.imageUrl1x1, `${idPrefix}-1x1`),
+        uploadArticleImage(b.imageUrl9x16, `${idPrefix}-9x16`),
+      ]);
+
+      const { data, error } = await supabase.from('generated_articles').insert({
+        title: b.title || '無題の記事',
+        content: b.content || '',
+        plain_content: b.plainContent || '',
+        meta_description: b.metaDescription || '',
+        insta_caption: b.instaCaption || '',
+        insta_hashtags: b.instaHashtags || '',
+        threads_caption: b.threadsCaption || '',
+        keywords: b.keywords || [],
+        image_url: imageUrl,
+        image_url_1x1: imageUrl1x1,
+        image_url_9x16: imageUrl9x16,
+      }).select().single();
+
+      if (error) return res.status(500).json({ error: error.message });
+      res.json({ success: true, article: data, imageUrl, imageUrl1x1, imageUrl9x16 });
+    } catch (e: any) {
+      console.error('[save-article] Error:', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // --- Export all saved articles as an .xlsx workbook ---
+  app.get("/api/articles/export", async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });
+    try {
+      const { data, error } = await supabase
+        .from('generated_articles')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) return res.status(500).json({ error: error.message });
+
+      const ExcelJS = (await import('exceljs')).default;
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('記事一覧');
+      sheet.columns = [
+        { header: '作成日時', key: 'created_at', width: 20 },
+        { header: 'タイトル', key: 'title', width: 40 },
+        { header: 'キーワード', key: 'keywords', width: 25 },
+        { header: '本文', key: 'content', width: 60 },
+        { header: 'メタディスクリプション', key: 'meta_description', width: 40 },
+        { header: 'Instagramキャプション', key: 'insta_caption', width: 40 },
+        { header: 'Instagramハッシュタグ', key: 'insta_hashtags', width: 40 },
+        { header: 'Threadsキャプション', key: 'threads_caption', width: 40 },
+        { header: '画像URL', key: 'image_url', width: 50 },
+        { header: '画像URL(1:1)', key: 'image_url_1x1', width: 50 },
+        { header: '画像URL(9:16)', key: 'image_url_9x16', width: 50 },
+      ];
+      sheet.getRow(1).font = { bold: true };
+      for (const row of data || []) {
+        sheet.addRow({
+          ...row,
+          keywords: Array.isArray(row.keywords) ? row.keywords.join(', ') : (row.keywords || ''),
+          created_at: row.created_at ? new Date(row.created_at).toLocaleString('ja-JP') : '',
+        });
+      }
+
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="articles_${Date.now()}.xlsx"`);
+      await workbook.xlsx.write(res);
+      res.end();
+    } catch (e: any) {
+      console.error('[articles/export] Error:', e.message);
       res.status(500).json({ error: e.message });
     }
   });

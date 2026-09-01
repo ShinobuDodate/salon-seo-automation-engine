@@ -282,6 +282,25 @@ const safeParseJson = (text: string, fallback: any = {}) => {
   return fallback;
 };
 
+// Vercel (and other platform layers) can reject an oversized request body with a
+// plain-text error (e.g. "Request Entity Too Large") before it ever reaches our
+// Express handler. Calling res.json() directly on that throws a cryptic
+// "Unexpected token" SyntaxError. Read as text first so we can surface something
+// readable instead.
+const parseJsonResponse = async (res: Response): Promise<any> => {
+  const text = await res.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(
+      res.ok
+        ? 'サーバーから予期しない応答がありました。'
+        : `サーバーエラー (${res.status}): ${text.substring(0, 200) || res.statusText}`
+    );
+  }
+};
+
 // --- Error Boundary ---
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -1322,6 +1341,45 @@ ${rawText}`;
 
       // Limit to 100 posts in memory
       setBlogPosts(prev => [newPost, ...prev].slice(0, 100));
+
+      // Persist the article and move its images out of browser memory into Supabase
+      // Storage, so they survive reload/tab-close and can be reused (Excel export,
+      // history) instead of being silently dropped before the localStorage save.
+      // Fire-and-forget: generation is already done from the user's perspective.
+      (async () => {
+        try {
+          const saveRes = await fetch('/api/save-article', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: newPost.id,
+              title: newPost.title,
+              content: newPost.content,
+              plainContent: newPost.plainContent,
+              metaDescription: newPost.metaDescription,
+              instaCaption: newPost.instaCaption,
+              instaHashtags: newPost.instaHashtags,
+              threadsCaption: newPost.threadsCaption,
+              keywords: newPost.keywords,
+              imageUrl: newPost.imageUrl,
+              imageUrl1x1: newPost.imageUrl1x1,
+              imageUrl9x16: newPost.imageUrl9x16,
+            })
+          });
+          const saveData = await parseJsonResponse(saveRes);
+          if (saveData?.success) {
+            setBlogPosts(prev => prev.map(p => p.id === newPost.id ? {
+              ...p,
+              imageUrl: saveData.imageUrl || p.imageUrl,
+              imageUrl1x1: saveData.imageUrl1x1 || p.imageUrl1x1,
+              imageUrl9x16: saveData.imageUrl9x16 || p.imageUrl9x16,
+            } : p));
+          }
+        } catch (e) {
+          console.error('[save-article] Failed to persist article:', e);
+        }
+      })();
+
       if (!isBatchMode) {
         setState({ status: 'completed', imageUrl });
         // Not auto-opening the edit modal: the post is already saved to the list above.
@@ -2346,7 +2404,7 @@ ${rawText}`;
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
           });
-          const data = await res.json();
+          const data = await parseJsonResponse(res);
           if (data.error) throw new Error(data.error);
 
           clearTimeout(timeoutId);
@@ -2926,7 +2984,7 @@ ${rawText}`;
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (data.error) throw new Error(data.error);
 
       setNotification({ message: `「${post.title}」をSupabaseに予約しました！${loopEnabled ? `（${formatLoopInterval(loopIntervalDays)}ごとにループ）` : ''}`, type: 'success' });
@@ -5012,6 +5070,14 @@ ${originalHtml.substring(0, 12000)}
                       <span>生成された記事一覧</span>
                     </h3>
                     <div className="flex items-center space-x-3">
+                      <button
+                        onClick={() => window.open('/api/articles/export', '_blank')}
+                        className="px-3 py-1.5 bg-black/5 border border-black/10 rounded-lg text-[10px] text-black/50 hover:text-gold hover:border-gold/30 transition-all flex items-center space-x-1"
+                        title="これまで生成した全記事をExcel(.xlsx)でダウンロード（再利用用）"
+                      >
+                        <FileText size={10} />
+                        <span>Excelにエクスポート</span>
+                      </button>
                       {blogPosts.length > 0 && (
                         <button
                           onClick={exportPostsAsCsv}
