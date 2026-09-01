@@ -688,7 +688,10 @@ export function createApp() {
     try {
       const { dataUrl, filename } = req.body || {};
       if (!dataUrl || !filename) return res.status(400).json({ error: 'dataUrl and filename are required' });
-      const url = await uploadArticleImage(dataUrl, filename);
+      // uploadArticleImage appends its own extension, so strip one if the caller
+      // already included it (e.g. "abc-main.png") to avoid "abc-main.png.png".
+      const filenamePrefix = filename.replace(/\.[a-zA-Z0-9]+$/, '');
+      const url = await uploadArticleImage(dataUrl, filenamePrefix);
       if (!url) return res.status(500).json({ error: '画像のアップロードに失敗しました' });
       res.json({ url });
     } catch (e: any) {
