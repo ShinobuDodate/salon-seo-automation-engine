@@ -1622,6 +1622,26 @@ ${rawText}`;
   };
 
   const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [claudeTest, setClaudeTest] = useState<{ status: 'idle' | 'running' | 'done' | 'error'; text?: string; error?: string }>({ status: 'idle' });
+  const runClaudeTestGenerate = async () => {
+    setClaudeTest({ status: 'running' });
+    try {
+      const activeKeyword = blogKeywords.find(k => k.trim() !== '') || 'エステサロン 池袋';
+      const res = await fetch('/api/test-claude-generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: activeKeyword })
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setClaudeTest({ status: 'error', error: data.error || `HTTP ${res.status}` });
+      } else {
+        setClaudeTest({ status: 'done', text: data.text });
+      }
+    } catch (e: any) {
+      setClaudeTest({ status: 'error', error: e.message });
+    }
+  };
   const [isScanningTypes, setIsScanningTypes] = useState(false);
   const [isGeneratingImages, setIsGeneratingImages] = useState(false);
   const [availablePostTypes, setAvailablePostTypes] = useState<{slug: string, name: string}[]>([]);
@@ -4955,6 +4975,30 @@ ${originalHtml.substring(0, 12000)}
                   ? 'Gemini 3.1 Pro を使用しています。サロンのSEOに特化した高品質な記事を自動生成します。（無料枠では利用できません）'
                   : 'Gemini 3.1 Flash Lite を使用しています。サロンのSEOに特化した記事を、無料枠内で高速に自動生成します。'}
               </p>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
+              <p className="text-[10px] text-blue-600 uppercase tracking-widest font-bold">診断用：Claudeでテスト生成</p>
+              <p className="text-[9px] text-black/40 leading-tight">
+                Geminiとは別のAI(Anthropic Claude)で試し書きし、問題がGemini固有か、それ以外(環境変数・Vercelのルーティング等)かを切り分けます。実際の記事生成・投稿には使いません。
+              </p>
+              <button
+                onClick={runClaudeTestGenerate}
+                disabled={claudeTest.status === 'running'}
+                className="w-full py-2 rounded-lg text-[10px] font-bold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-all"
+              >
+                {claudeTest.status === 'running' ? 'テスト生成中...' : 'Claudeでテスト生成を実行'}
+              </button>
+              {claudeTest.status === 'done' && (
+                <div className="text-[10px] text-black/60 bg-white rounded-lg p-3 border border-blue-100 whitespace-pre-wrap">
+                  <span className="font-bold text-blue-600">✓ 成功: </span>{claudeTest.text}
+                </div>
+              )}
+              {claudeTest.status === 'error' && (
+                <div className="text-[10px] text-red-600 bg-white rounded-lg p-3 border border-red-100 whitespace-pre-wrap">
+                  <span className="font-bold">✗ エラー: </span>{claudeTest.error}
+                </div>
+              )}
             </div>
           </div>
 

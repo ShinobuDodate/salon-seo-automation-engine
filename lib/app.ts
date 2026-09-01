@@ -651,5 +651,35 @@ export function createApp() {
     }
   });
 
+  // --- Diagnostic endpoint: test article generation via Claude (Anthropic), server-side ---
+  // Purpose: isolate whether generation failures are Gemini-specific (quota/billing) or
+  // a broader problem (env vars, Vercel routing, network egress, etc.). Not part of the
+  // normal generation flow.
+  app.post("/api/test-claude-generate", async (req, res) => {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return res.status(503).json({ error: 'ANTHROPIC_API_KEY not configured' });
+    const { topic } = req.body || {};
+    try {
+      const { default: Anthropic } = await import('@anthropic-ai/sdk');
+      const anthropic = new Anthropic({ apiKey });
+      const message = await anthropic.messages.create({
+        model: 'claude-sonnet-5',
+        max_tokens: 512,
+        messages: [{
+          role: 'user',
+          content: `あなたは美容サロン専門のSEOライターです。キーワード「${topic || 'エステサロン 池袋'}」について、300文字程度の短いブログ記事の書き出しを日本語で書いてください。`
+        }]
+      });
+      const text = message.content
+        .filter((block: any) => block.type === 'text')
+        .map((block: any) => block.text)
+        .join('\n');
+      res.json({ text, model: 'claude-sonnet-5' });
+    } catch (e: any) {
+      console.error('[test-claude-generate] Error:', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   return app;
 }
